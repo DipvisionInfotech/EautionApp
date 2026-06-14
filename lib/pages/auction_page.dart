@@ -158,15 +158,15 @@ class _AuctionPageState extends State<AuctionPage> {
   }
 
   Widget _buildAuctionGrid(double screenWidth) {
-    int crossAxisCount = screenWidth > 1100 ? 2 : 1;
+    int crossAxisCount = screenWidth > 1500 ? 4 : (screenWidth > 1100 ? 3 : (screenWidth > 800 ? 2 : 1));
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 1200 ? 1.5 : (screenWidth > 600 ? 1.3 : 0.85),
-        crossAxisSpacing: 25,
-        mainAxisSpacing: 25,
+        childAspectRatio: screenWidth > 1500 ? 1.05 : (screenWidth > 1100 ? 0.95 : (screenWidth > 800 ? 1.1 : 1.4)),
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
       ),
       itemCount: 4,
       itemBuilder: (context, index) {
@@ -243,55 +243,53 @@ class _AuctionPageState extends State<AuctionPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 4,
-              child: Stack(
-                children: [
-                  Image.network(
-                    auction['image']!,
-                    width: double.infinity,
-                    height: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        color: const Color(0xFFF1F5F9),
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: double.infinity,
+            Stack(
+              children: [
+                Image.network(
+                  auction['image']!,
+                  width: double.infinity,
+                  height: 160,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return Container(
+                      height: 160,
                       color: const Color(0xFFF1F5F9),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                          SizedBox(height: 8),
-                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
+                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 160,
+                    width: double.infinity,
+                    color: const Color(0xFFF1F5F9),
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                        SizedBox(height: 8),
+                        Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
                     ),
                   ),
-                  Positioned(
-                    top: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: type.contains('Private') ? const Color(0xFF1E293B) : const Color(0xFF0288D1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        type.toUpperCase(),
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: type.contains('Private') ? const Color(0xFF1E293B) : const Color(0xFF0288D1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      type.toUpperCase(),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             Expanded(
-              flex: 5,
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -299,13 +297,15 @@ class _AuctionPageState extends State<AuctionPage> {
                   children: [
                     Text(
                       auction['title']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B), height: 1.3),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     _rowInfo(Icons.calendar_today_outlined, 'Schedule', '${auction['start']}'),
+                    const SizedBox(height: 6),
                     _rowInfo(Icons.inventory_2_outlined, 'Quantity', auction['qty']!),
+                    const SizedBox(height: 6),
                     _rowInfo(Icons.category_outlined, 'Category', auction['cat']!),
                     const Spacer(),
                     Row(
@@ -316,22 +316,22 @@ class _AuctionPageState extends State<AuctionPage> {
                             style: OutlinedButton.styleFrom(
                               side: const BorderSide(color: Color(0xFFE2E8F0)),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
-                            child: const Text('View', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            child: const Text('View Detail', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           flex: 2,
                           child: ElevatedButton(
                             onPressed: () => _showInterest(auction),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF8BC34A),
+                              backgroundColor: const Color(0xFF0288D1),
                               foregroundColor: Colors.white,
                               elevation: 0,
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                             child: const Text('Show Interest', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                           ),

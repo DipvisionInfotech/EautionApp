@@ -150,15 +150,15 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
   }
 
   Widget _buildClassifiedGrid(double screenWidth) {
-    int crossAxisCount = screenWidth > 1100 ? 3 : (screenWidth > 700 ? 2 : 1);
+    int crossAxisCount = screenWidth > 1500 ? 4 : (screenWidth > 1100 ? 3 : (screenWidth > 700 ? 2 : 1));
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 500 ? 0.85 : 0.95,
-        crossAxisSpacing: 30,
-        mainAxisSpacing: 30,
+        childAspectRatio: screenWidth > 1500 ? 1.05 : (screenWidth > 1100 ? 0.95 : (screenWidth > 700 ? 1.1 : 1.4)),
+        crossAxisSpacing: 20,
+        mainAxisSpacing: 20,
       ),
       itemCount: 2,
       itemBuilder: (context, index) {
@@ -208,63 +208,61 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 5,
-              child: Stack(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of ${item['title']}.');
-                    },
-                    child: Image.network(
-                      item['image']!,
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          color: const Color(0xFFF1F5F9),
-                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        width: double.infinity,
+            Stack(
+              children: [
+                InkWell(
+                  onTap: () {
+                    GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of ${item['title']}.');
+                  },
+                  child: Image.network(
+                    item['image']!,
+                    width: double.infinity,
+                    height: 160,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 160,
                         color: const Color(0xFFF1F5F9),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                            SizedBox(height: 8),
-                            Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 160,
+                      width: double.infinity,
+                      color: const Color(0xFFF1F5F9),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.location_on, size: 12, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(item['location']!, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                          SizedBox(height: 8),
+                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
                         ],
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+                Positioned(
+                  bottom: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(item['location']!, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
             Expanded(
-              flex: 4,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -272,25 +270,25 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                   children: [
                     Text(
                       item['title']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
-                      maxLines: 1,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B), height: 1.3),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 12),
                     _cardRow(Icons.inventory_2_outlined, 'Qty', item['qty']!),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     _cardRow(Icons.payments_outlined, 'Price', '₹${item['price']}'),
                     const Spacer(),
                     ElevatedButton(
                       onPressed: () => EnquiryDialog.show(context, item['title']!),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8BC34A),
+                        backgroundColor: const Color(0xFF0288D1),
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        minimumSize: const Size(double.infinity, 40),
+                        minimumSize: const Size(double.infinity, 50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ],
                 ),

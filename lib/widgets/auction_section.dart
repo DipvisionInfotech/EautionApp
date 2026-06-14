@@ -86,10 +86,10 @@ class AuctionSection extends StatelessWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: screenWidth > 1200 ? 3 : 2,
-                childAspectRatio: screenWidth > 1200 ? 0.65 : 0.72,
-                crossAxisSpacing: 25,
-                mainAxisSpacing: 25,
+                crossAxisCount: screenWidth > 1500 ? 4 : (screenWidth > 1100 ? 3 : 2),
+                childAspectRatio: screenWidth > 1500 ? 1.05 : (screenWidth > 1100 ? 0.95 : 1.1),
+                crossAxisSpacing: 20,
+                mainAxisSpacing: 20,
               ),
               itemCount: 4,
               itemBuilder: (context, index) => _auctionCardForIndex(index),
@@ -208,12 +208,12 @@ class AuctionCard extends StatelessWidget {
                     child: Image.network(
                       imageUrl,
                       width: double.infinity,
-                      height: 180,
+                      height: 160,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, loadingProgress) {
                         if (loadingProgress == null) return child;
                         return Container(
-                          height: 180,
+                          height: 160,
                           width: double.infinity,
                           color: const Color(0xFFF1F5F9),
                           alignment: Alignment.center,
@@ -221,7 +221,7 @@ class AuctionCard extends StatelessWidget {
                         );
                       },
                       errorBuilder: (context, error, stackTrace) => Container(
-                        height: 180,
+                        height: 160,
                         width: double.infinity,
                         color: const Color(0xFFF1F5F9),
                         alignment: Alignment.center,
@@ -283,7 +283,7 @@ class AuctionCard extends StatelessWidget {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                padding: const EdgeInsets.all(16.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -291,20 +291,18 @@ class AuctionCard extends StatelessWidget {
                       title,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 15,
                         color: Color(0xFF1E293B),
                         height: 1.3,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     _detailRow(Icons.calendar_today_outlined, 'Schedule', '$start - $end'),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     _detailRow(Icons.inventory_2_outlined, 'Quantity', qty),
                     const Spacer(),
-                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -313,13 +311,16 @@ class AuctionCard extends StatelessWidget {
                               GeminiInfoDialog.show(context, 'Details', 'Complete auction specs for $title');
                             },
                             style: TextButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 12),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: const BorderSide(color: Color(0xFFE2E8F0)),
+                              ),
                             ),
-                            child: const Text('View Detail', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            child: const Text('View Detail', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           flex: 2,
                           child: ElevatedButton(
@@ -328,10 +329,10 @@ class AuctionCard extends StatelessWidget {
                               backgroundColor: const Color(0xFF0288D1),
                               foregroundColor: Colors.white,
                               elevation: 0,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                             ),
-                            child: const Text('Show Interest', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                            child: const Text('Show Interest', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ],

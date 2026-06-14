@@ -64,14 +64,14 @@ class ClassifiedSection extends StatelessWidget {
           ),
           const SizedBox(height: 40),
           LayoutBuilder(builder: (context, constraints) {
-            int crossAxisCount = constraints.maxWidth > 1200 ? 3 : (constraints.maxWidth > 700 ? 2 : 1);
+            int crossAxisCount = constraints.maxWidth > 1500 ? 4 : (constraints.maxWidth > 1100 ? 3 : (constraints.maxWidth > 700 ? 2 : 1));
             return GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: crossAxisCount,
-              childAspectRatio: constraints.maxWidth > 500 ? 0.85 : 0.95,
-              crossAxisSpacing: 30,
-              mainAxisSpacing: 30,
+              childAspectRatio: constraints.maxWidth > 1500 ? 1.05 : (constraints.maxWidth > 1100 ? 0.95 : (constraints.maxWidth > 700 ? 1.1 : 1.4)),
+              crossAxisSpacing: 20,
+              mainAxisSpacing: 20,
               children: [
                 _classifiedCard(context, 'Water Affected Rice', '4925 Kg', '45', 'Wardha', 'https://images.unsplash.com/photo-1586201327111-9f43a5b63547?auto=format&fit=crop&w=500&q=60'),
                 _classifiedCard(context, 'Water Affected Mobiles', '28 Pieces', '2,25,000', 'Delhi', 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=500&q=60'),
@@ -103,63 +103,61 @@ class ClassifiedSection extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              flex: 5,
-              child: Stack(
-                children: [
-                  InkWell(
-                    onTap: () {
-                      GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of $title.');
-                    },
-                    child: Image.network(
-                      imageUrl,
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        return Container(
-                          color: const Color(0xFFF1F5F9),
-                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        width: double.infinity,
+            Stack(
+              children: [
+                InkWell(
+                  onTap: () {
+                    GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of $title.');
+                  },
+                  child: Image.network(
+                    imageUrl,
+                    width: double.infinity,
+                    height: 160,
+                    fit: BoxFit.cover,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Container(
+                        height: 160,
                         color: const Color(0xFFF1F5F9),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                            SizedBox(height: 8),
-                            Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Row(
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      height: 160,
+                      width: double.infinity,
+                      color: const Color(0xFFF1F5F9),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.location_on, size: 12, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(location, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                          SizedBox(height: 8),
+                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
                         ],
                       ),
                     ),
                   ),
-                ],
-              ),
+                ),
+                Positioned(
+                  bottom: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 12, color: Colors.white),
+                        const SizedBox(width: 4),
+                        Text(location, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
             Expanded(
-              flex: 4,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -167,13 +165,13 @@ class ClassifiedSection extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
-                      maxLines: 1,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B), height: 1.3),
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 12),
                     _infoRow(Icons.inventory_2_outlined, 'Qty', qty),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     _infoRow(Icons.payments_outlined, 'Price', '₹$price'),
                     const Spacer(),
                     ElevatedButton(
@@ -182,10 +180,10 @@ class ClassifiedSection extends StatelessWidget {
                         backgroundColor: const Color(0xFF8BC34A),
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        minimumSize: const Size(double.infinity, 40),
+                        minimumSize: const Size(double.infinity, 50),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold)),
+                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     ),
                   ],
                 ),
