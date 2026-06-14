@@ -55,8 +55,6 @@ class _AuctionPageState extends State<AuctionPage> {
                   _buildSearchSection(screenWidth),
                   const SizedBox(height: 30),
                   _buildAuctionGrid(screenWidth),
-                  const SizedBox(height: 40),
-                  _buildDiscoverMore(context),
                 ],
               ),
             ),
@@ -166,9 +164,9 @@ class _AuctionPageState extends State<AuctionPage> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 600 ? 1.8 : 1.1,
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
+        childAspectRatio: screenWidth > 1200 ? 1.5 : (screenWidth > 600 ? 1.3 : 0.85),
+        crossAxisSpacing: 25,
+        mainAxisSpacing: 25,
       ),
       itemCount: 4,
       itemBuilder: (context, index) {
@@ -181,7 +179,7 @@ class _AuctionPageState extends State<AuctionPage> {
     GeminiInfoDialog.show(
       context,
       auction['title']!,
-      'Auction Detail for: ${auction['title']}\n\nQuantity: ${auction['qty']}\nStart: ${auction['start']}\nEnd: ${auction['end']}\nCategory: ${auction['cat']}\n\nThis is a detailed view of the auction item. More information can be added here once provided by the backend.',
+      'Auction Detail for: ${auction['title']}\n\nQuantity: ${auction['qty']}\nStart: ${auction['start']}\nEnd: ${auction['end']}\nCategory: ${auction['cat']}',
     );
   }
 
@@ -189,188 +187,180 @@ class _AuctionPageState extends State<AuctionPage> {
     EnquiryDialog.show(context, auction['title']!);
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildAuctionCard(int index) {
     final auctions = [
       {
         'title': 'Approx. 22,000 Kg of Damaged MS Trusses and Purlins on "Per Kg" Basis',
-        'image': 'https://plus.unsplash.com/premium_photo-1661962383790-a3594042217c?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1516937941344-00b4e0337589?auto=format&fit=crop&w=800&q=80',
         'start': '16 Jun 2026 04:00 PM',
         'end': '16 Jun 2026 05:00 PM',
         'qty': '22000 kg',
-        'cat': 'M S Scrap'
+        'cat': 'M S Scrap',
+        'type': 'Private Auction'
       },
       {
-        'title': 'Fire Affected Approx. 25,850 Kg of Fire affected 10 Nos. of Loom Machine (MS + Pla...',
-        'image': 'https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=500&q=60',
+        'title': 'Fire Affected Approx. 25,850 Kg of Fire affected 10 Nos. of Loom Machine',
+        'image': 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=800&q=80',
         'start': '16 Jun 2026 04:00 PM',
         'end': '16 Jun 2026 05:00 PM',
         'qty': '25,850 Kg',
-        'cat': 'Scrap'
+        'cat': 'Scrap',
+        'type': 'Group Auction'
       },
       {
         'title': 'Fire & Water Affected Approx. 7,800 Kg of Yarn on Beem on "Per Kg" Basis',
-        'image': 'https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?auto=format&fit=crop&w=800&q=80',
         'start': '16 Jun 2026 04:00 PM',
         'end': '16 Jun 2026 05:00 PM',
         'qty': '7,800 Kg',
-        'cat': 'Textiles'
+        'cat': 'Textiles',
+        'type': 'Private Auction'
       },
       {
         'title': 'Fire & Water Affected Approx. 2,650 Kg of Cotton Fabric',
-        'image': 'https://images.unsplash.com/photo-1528469133744-672527221d66?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1528469133744-672527221d66?auto=format&fit=crop&w=800&q=80',
         'start': '16 Jun 2026 04:00 PM',
         'end': '16 Jun 2026 05:00 PM',
         'qty': '2,650 Kg',
-        'cat': 'Fabric'
+        'cat': 'Fabric',
+        'type': 'Group Auction'
       },
     ];
     final auction = auctions[index % auctions.length];
+    final type = auction['type']!;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8)),
+        ],
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
-      padding: const EdgeInsets.all(15),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: Image.network(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 4,
+              child: Stack(
+                children: [
+                  Image.network(
                     auction['image']!,
-                    width: 140,
-                    height: 100,
+                    width: double.infinity,
+                    height: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
                       return Container(
-                        width: 140,
-                        height: 100,
-                        color: Colors.grey[200],
-                        child: const Icon(Icons.image_not_supported, color: Colors.grey),
+                        color: const Color(0xFFF1F5F9),
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       );
                     },
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      width: double.infinity,
+                      color: const Color(0xFFF1F5F9),
+                      child: const Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                          SizedBox(height: 8),
+                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 15),
-                Expanded(
-                  child: Column(
-                    children: [
-                      _rowInfo('Start Time', auction['start']!),
-                      _rowInfo('Start Time', auction['end']!), // Reusing labels as per screenshot
-                      _rowInfo('Quantity', auction['qty']!),
-                      _rowInfo('Auction Category', auction['cat']!),
-                    ],
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: type.contains('Private') ? const Color(0xFF1E293B) : const Color(0xFF0288D1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        type.toUpperCase(),
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            auction['title']!,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              _actionBtn('View', const Color(0xFF03A9F4), () => _viewDetail(auction)),
-              const SizedBox(width: 10),
-              _actionBtn('Show Interest', const Color(0xFF8BC34A), () => _showInterest(auction)),
-            ],
-          ),
-        ],
+            Expanded(
+              flex: 5,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      auction['title']!,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B)),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    _rowInfo(Icons.calendar_today_outlined, 'Schedule', '${auction['start']}'),
+                    _rowInfo(Icons.inventory_2_outlined, 'Quantity', auction['qty']!),
+                    _rowInfo(Icons.category_outlined, 'Category', auction['cat']!),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => _viewDetail(auction),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFE2E8F0)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            child: const Text('View', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () => _showInterest(auction),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF8BC34A),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                            ),
+                            child: const Text('Show Interest', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-
-  Widget _rowInfo(String label, String value) {
+  Widget _rowInfo(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 5),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black87)),
-          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
-  }
-
-  Widget _actionBtn(String label, Color color, VoidCallback onPressed) {
-    return ElevatedButton(
-      onPressed: onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-      ),
-      child: Text(label, style: const TextStyle(fontSize: 12)),
-    );
-  }
-
-  Widget _buildDiscoverMore(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(15.0),
-            child: Text('Discover more', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          Icon(icon, size: 14, color: Colors.grey[400]),
+          const SizedBox(width: 6),
+          Text('$label: ', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
+          Expanded(
+            child: Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
           ),
-          const Divider(),
-          _discoverItem(context, 'E-Commerce Services'),
-          const Divider(),
-          _discoverItem(context, 'e-Auction'),
-          const Divider(),
-          _discoverItem(context, 'Auctions'),
         ],
       ),
-    );
-  }
-
-  Widget _discoverItem(BuildContext context, String title) {
-    return ListTile(
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () {
-        String content = "";
-        if (title == 'e-Auction') {
-          content = 'Understanding the E-Auction Process\n\nE-auctions represent a modern approach to buying and selling goods and services online...';
-        } else if (title == 'E-Commerce Services') {
-          content = 'Understanding E-commerce Services\n\nE-commerce services encompass a wide range of tools and platforms...';
-        } else {
-          content = 'Understanding Auctions: A Buyer\'s Guide\n\nAuctions represent a unique marketplace where goods and services are sold to the highest bidder...';
-        }
-        GeminiInfoDialog.show(context, title, content);
-      },
     );
   }
 

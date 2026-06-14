@@ -51,8 +51,6 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                   _buildSearchSection(screenWidth),
                   const SizedBox(height: 30),
                   _buildClassifiedGrid(screenWidth),
-                  const SizedBox(height: 40),
-                  _buildDiscoverMore(context),
                 ],
               ),
             ),
@@ -152,15 +150,15 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
   }
 
   Widget _buildClassifiedGrid(double screenWidth) {
-    int crossAxisCount = screenWidth > 1100 ? 3 : (screenWidth > 600 ? 2 : 1);
+    int crossAxisCount = screenWidth > 1100 ? 3 : (screenWidth > 700 ? 2 : 1);
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: 0.8,
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
+        childAspectRatio: screenWidth > 500 ? 0.85 : 0.95,
+        crossAxisSpacing: 30,
+        mainAxisSpacing: 30,
       ),
       itemCount: 2,
       itemBuilder: (context, index) {
@@ -173,23 +171,11 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
     EnquiryDialog.show(context, item['title']!);
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Text('$label: ', style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value)),
-        ],
-      ),
-    );
-  }
-
   Widget _buildClassifiedCard(int index) {
     final items = [
       {
         'title': 'Water Affected Rice',
-        'image': 'https://images.unsplash.com/photo-1586201327693-866199f12179?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1586201327111-9f43a5b63547?auto=format&fit=crop&w=500&q=60',
         'qty': '4925 Kg',
         'price': '45',
         'location': 'Wardha'
@@ -198,7 +184,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
         'title': 'Water Affected Mobiles',
         'image': 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=500&q=60',
         'qty': '28 Pieces',
-        'price': '225000',
+        'price': '2,25,000',
         'location': 'Delhi'
       },
     ];
@@ -207,116 +193,123 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.withOpacity(0.2)),
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 5, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
         ],
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-            child: Image.network(
-              item['image']!,
-              height: 180,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                height: 180,
-                color: Colors.grey[200],
-                child: const Icon(Icons.image_not_supported, color: Colors.grey),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Stack(
+                children: [
+                  InkWell(
+                    onTap: () {
+                      GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of ${item['title']}.');
+                    },
+                    child: Image.network(
+                      item['image']!,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: double.infinity,
+                        color: const Color(0xFFF1F5F9),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                            SizedBox(height: 8),
+                            Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.6),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.location_on, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(item['location']!, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(15.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['title']!,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                ),
-                const SizedBox(height: 10),
-                _cardRow('Quantity', item['qty']!),
-                _cardRow('Price', item['price']!),
-                _cardRow('', item['location']!, showLabel: false),
-                const SizedBox(height: 15),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => _viewDetail(item),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF8BC34A),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+            Expanded(
+              flex: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item['title']!,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF1E293B)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    child: const Text('View Detail'),
-                  ),
+                    const SizedBox(height: 12),
+                    _cardRow(Icons.inventory_2_outlined, 'Qty', item['qty']!),
+                    const SizedBox(height: 4),
+                    _cardRow(Icons.payments_outlined, 'Price', '₹${item['price']}'),
+                    const Spacer(),
+                    ElevatedButton(
+                      onPressed: () => EnquiryDialog.show(context, item['title']!),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF8BC34A),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        minimumSize: const Size(double.infinity, 40),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _cardRow(String label, String value, {bool showLabel = true}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        children: [
-          if (showLabel) Text('$label : ', style: const TextStyle(fontSize: 13, color: Colors.black87)),
-          Text(value, style: const TextStyle(fontSize: 13, color: Colors.black87)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDiscoverMore(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(15.0),
-            child: Text('Discover more', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ),
-          const Divider(),
-          _discoverItem(context, 'E-Commerce Services'),
-          const Divider(),
-          _discoverItem(context, 'e-Auction'),
-          const Divider(),
-          _discoverItem(context, 'Auctions'),
-        ],
-      ),
-    );
-  }
-
-  Widget _discoverItem(BuildContext context, String title) {
-    return ListTile(
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () {
-        String content = "";
-        if (title == 'e-Auction') {
-          content = 'Understanding the E-Auction Process\n\nE-auctions represent a modern approach to buying and selling goods and services online...';
-        } else if (title == 'E-Commerce Services') {
-          content = 'Understanding E-commerce Services\n\nE-commerce services encompass a wide range of tools and platforms...';
-        } else {
-          content = 'Understanding Auctions: A Buyer\'s Guide\n\nAuctions represent a unique marketplace where goods and services are sold to the highest bidder...';
-        }
-        GeminiInfoDialog.show(context, title, content);
-      },
+  Widget _cardRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.grey[400]),
+        const SizedBox(width: 6),
+        Text('$label: ', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+      ],
     );
   }
 

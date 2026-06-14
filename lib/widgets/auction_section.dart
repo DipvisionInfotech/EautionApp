@@ -10,41 +10,76 @@ class AuctionSection extends StatelessWidget {
     double screenWidth = MediaQuery.of(context).size.width;
     bool isMobile = screenWidth < 900;
 
-    return Padding(
-      padding: EdgeInsets.all(screenWidth > 600 ? 40.0 : 20.0),
+    return Container(
+      color: const Color(0xFFF8FAFC),
+      padding: EdgeInsets.symmetric(
+        horizontal: screenWidth > 600 ? 40.0 : 20.0,
+        vertical: 60.0,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              const Text(
-                'Upcoming Auction',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0288D1).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'EXCLUSIVE DEALS',
+                      style: TextStyle(
+                        color: Color(0xFF0288D1),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Upcoming Auctions',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                ],
               ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pushNamed(context, '/auction');
-                },
-                child: const Row(
-                  children: [
-                    Text('View All'),
-                    Icon(Icons.arrow_forward, size: 16),
-                  ],
+              if (!isMobile)
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.pushNamed(context, '/auction'),
+                  icon: const Icon(Icons.grid_view_rounded, size: 18),
+                  label: const Text('View All Auctions'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF0288D1),
+                    elevation: 0,
+                    side: const BorderSide(color: Color(0xFFE2E8F0)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
-              ),
             ],
           ),
-          const SizedBox(height: 20),
-          if (isMobile)
+          const SizedBox(height: 40),
+            if (isMobile)
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: 4,
-              separatorBuilder: (context, index) => const SizedBox(height: 20),
-              itemBuilder: (context, index) {
-                return _auctionCardForIndex(index);
-              },
+              separatorBuilder: (context, index) => const SizedBox(height: 24),
+              itemBuilder: (context, index) => SizedBox(
+                height: 460,
+                child: _auctionCardForIndex(index),
+              ),
             )
           else
             GridView.builder(
@@ -52,15 +87,26 @@ class AuctionSection extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: screenWidth > 1200 ? 3 : 2,
-                childAspectRatio: screenWidth > 1200 ? 1.5 : 1.8,
-                crossAxisSpacing: 20,
-                mainAxisSpacing: 20,
+                childAspectRatio: screenWidth > 1200 ? 0.65 : 0.72,
+                crossAxisSpacing: 25,
+                mainAxisSpacing: 25,
               ),
               itemCount: 4,
-              itemBuilder: (context, index) {
-                return _auctionCardForIndex(index);
-              },
+              itemBuilder: (context, index) => _auctionCardForIndex(index),
             ),
+          if (isMobile) ...[
+            const SizedBox(height: 30),
+            Center(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pushNamed(context, '/auction'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(200, 50),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('View All Auctions'),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -70,7 +116,7 @@ class AuctionSection extends StatelessWidget {
     final auctions = [
       {
         'title': 'STD-GR-410 | Fire Affected Loom Machines, MS & Plastic Scrap, Yarn on Beam, Cot.',
-        'image': 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
         'type': 'Group Auction',
         'start': '16 Jun 2026 16:00 PM',
         'end': '16 Jun 2026 17:00 PM',
@@ -78,7 +124,7 @@ class AuctionSection extends StatelessWidget {
       },
       {
         'title': 'STD-GR-411 | Plant & Machinery, Building MS, Printing Cylinders, Racks/Furniture, Aluminium Cables.',
-        'image': 'https://images.unsplash.com/photo-1504384308090-c89e12076d22?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80',
         'type': 'Group Auction',
         'start': '19 Jun 2026 16:00 PM',
         'end': '19 Jun 2026 17:00 PM',
@@ -86,7 +132,7 @@ class AuctionSection extends StatelessWidget {
       },
       {
         'title': 'STD-PR-2052 | Damaged MS Trusses and Purlins',
-        'image': 'https://images.unsplash.com/photo-1516937941344-00b4e0337589?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1533035353720-f1c6a75cd8ab?auto=format&fit=crop&w=800&q=80',
         'type': 'Private Auction',
         'start': '16 Jun 2026 16:00 PM',
         'end': '16 Jun 2026 17:00 PM',
@@ -94,7 +140,7 @@ class AuctionSection extends StatelessWidget {
       },
       {
         'title': 'STD-PR-2053 | Fire affected 10 Nos. of Loom Machine',
-        'image': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=500&q=60',
+        'image': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=800&q=80',
         'type': 'Private Auction',
         'start': '16 Jun 2026 16:00 PM',
         'end': '16 Jun 2026 17:00 PM',
@@ -133,154 +179,190 @@ class AuctionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    double screenWidth = MediaQuery.of(context).size.width;
-    bool isSmall = screenWidth < 500;
-
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF0F7FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.blue.withOpacity(0.2)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        border: Border.all(color: const Color(0xFFF1F5F9)),
       ),
-      padding: const EdgeInsets.all(15),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InkWell(
-                onTap: () {
-                  GeminiInfoDialog.show(context, 'Auction Image', 'Viewing high-resolution image for $title. All our auction listings include detailed visual documentation for inspection.');
-                },
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    imageUrl,
-                    width: isSmall ? 100 : 120,
-                    height: 100,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: isSmall ? 100 : 120,
-                      height: 100,
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.image_not_supported),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
+              children: [
+                InkWell(
+                  onTap: () {
+                    GeminiInfoDialog.show(context, 'Auction Image', 'Viewing high-resolution image for $title.');
+                  },
+                  child: Hero(
+                    tag: 'auction-$title',
+                    child: Image.network(
+                      imageUrl,
+                      width: double.infinity,
+                      height: 180,
+                      fit: BoxFit.cover,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 180,
+                          width: double.infinity,
+                          color: const Color(0xFFF1F5F9),
+                          alignment: Alignment.center,
+                          child: const CircularProgressIndicator(strokeWidth: 2),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        height: 180,
+                        width: double.infinity,
+                        color: const Color(0xFFF1F5F9),
+                        alignment: Alignment.center,
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                            SizedBox(height: 8),
+                            Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 15),
-              Expanded(
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.timer_outlined, size: 14, color: Color(0xFF0288D1)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Starts in 2D 16H',
+                          style: TextStyle(
+                            color: Colors.grey[800],
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: type.contains('Private') ? const Color(0xFF1E293B) : const Color(0xFF0288D1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      type.toUpperCase(),
+                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _auctionInfoRow('Auction Type', type, isBadge: true),
-                    _auctionInfoRow('Start Time', start),
-                    _auctionInfoRow('End Time', end),
-                    _auctionInfoRow('Quantity', qty),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: Color(0xFF1E293B),
+                        height: 1.3,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 10),
+                    _detailRow(Icons.calendar_today_outlined, 'Schedule', '$start - $end'),
+                    const SizedBox(height: 6),
+                    _detailRow(Icons.inventory_2_outlined, 'Quantity', qty),
+                    const Spacer(),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton(
+                            onPressed: () {
+                              GeminiInfoDialog.show(context, 'Details', 'Complete auction specs for $title');
+                            },
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: const Text('View Detail', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          flex: 2,
+                          child: ElevatedButton(
+                            onPressed: () => EnquiryDialog.show(context, title),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF0288D1),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            child: const Text('Show Interest', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 15),
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Starts In : ', style: TextStyle(fontSize: 12)),
-                  _timeBox('2D'),
-                  _timeBox('16H'),
-                  _timeBox('26M'),
-                  _timeBox('1S'),
-                ],
-              ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ElevatedButton(
-                    onPressed: () {
-                      GeminiInfoDialog.show(
-                        context,
-                        'Auction Details: $title',
-                        'Auction: $title\nType: $type\nStart: $start\nEnd: $end\nQuantity: $qty\n\nThis auction is scheduled to begin soon. Please ensure you have completed your registration and submitted any required EMD (Earnest Money Deposit) to participate.',
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF03A9F4),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: const Size(60, 35),
-                    ),
-                    child: const Text('View', style: TextStyle(fontSize: 12)),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () {
-                      EnquiryDialog.show(context, title);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF8BC34A),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: const Size(100, 35),
-                    ),
-                    child: const Text('Show Interest', style: TextStyle(fontSize: 12)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _auctionInfoRow(String label, String value, {bool isBadge = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: Colors.black87)),
-          if (isBadge)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-            )
-          else
-            Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
-  }
-
-  Widget _timeBox(String text) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFF03A9F4),
-        borderRadius: BorderRadius.circular(2),
-      ),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey[400]),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+              children: [
+                TextSpan(text: '$label: ', style: const TextStyle(fontWeight: FontWeight.w500)),
+                TextSpan(text: value, style: const TextStyle(color: Color(0xFF1E293B))),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

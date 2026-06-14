@@ -71,8 +71,6 @@ class ContactUsPage extends StatelessWidget {
                   _buildContactForm(context),
                   const SizedBox(height: 30),
                   _buildMapSection(),
-                  const SizedBox(height: 40),
-                  _buildDiscoverMore(context),
                 ],
               ),
             ),
@@ -266,48 +264,6 @@ class ContactUsPage extends StatelessWidget {
           errorBuilder: (context, error, stackTrace) => const Center(child: Text('Map View Placeholder')),
         ),
       ),
-    );
-  }
-
-  Widget _buildDiscoverMore(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.grey.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(15.0),
-            child: Text('Discover more', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ),
-          const Divider(),
-          _discoverItem(context, 'E-Commerce Services'),
-          const Divider(),
-          _discoverItem(context, 'e-Auction'),
-          const Divider(),
-          _discoverItem(context, 'Auctions'),
-        ],
-      ),
-    );
-  }
-
-  Widget _discoverItem(BuildContext context, String title) {
-    return ListTile(
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () {
-        String content = "";
-        if (title == 'e-Auction') {
-          content = 'Understanding the E-Auction Process\n\nE-auctions represent a modern approach to buying and selling goods and services online...';
-        } else if (title == 'E-Commerce Services') {
-          content = 'Understanding E-commerce Services\n\nE-commerce services encompass a wide range of tools and platforms...';
-        } else {
-          content = 'Understanding Auctions: A Buyer\'s Guide\n\nAuctions represent a unique marketplace where goods and services are sold to the highest bidder...';
-        }
-        GeminiInfoDialog.show(context, title, content);
-      },
     );
   }
 
