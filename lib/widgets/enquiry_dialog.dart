@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'gemini_info_dialog.dart';
 
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
@@ -23,6 +24,8 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
 
+  bool _isSending = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,6 +39,25 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
     _emailController.dispose();
     _messageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendEnquiry() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isSending = true);
+      
+      // Simulate API call
+      await Future.delayed(const Duration(seconds: 1));
+      
+      if (!mounted) return;
+      setState(() => _isSending = false);
+      
+      Navigator.pop(context);
+      GeminiInfoDialog.show(
+        context,
+        'Enquiry Submitted',
+        'Thank you for your interest in "${widget.auctionTitle}". Our marketing team (Amit Mishra) has been notified and will contact you shortly at ${_emailController.text} or ${_mobileController.text}.',
+      );
+    }
   }
 
   @override
@@ -108,6 +130,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                                 const SizedBox(height: 8),
                                 TextFormField(
                                   controller: _nameController,
+                                  enabled: !_isSending,
                                   decoration: _inputDecoration('Enter your name'),
                                   validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                                 ),
@@ -123,6 +146,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                                 const SizedBox(height: 8),
                                 TextFormField(
                                   controller: _mobileController,
+                                  enabled: !_isSending,
                                   decoration: _inputDecoration('Enter your mobile number'),
                                   validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                                 ),
@@ -136,6 +160,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _emailController,
+                        enabled: !_isSending,
                         decoration: _inputDecoration('Enter your email'),
                         validator: (v) => v == null || !v.contains('@') ? 'Invalid email' : null,
                       ),
@@ -144,6 +169,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _messageController,
+                        enabled: !_isSending,
                         maxLines: 4,
                         decoration: _inputDecoration(''),
                       ),
@@ -163,33 +189,22 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(context),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00AEEF),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-                    ),
+                  TextButton(
+                    onPressed: _isSending ? null : () => Navigator.pop(context),
                     child: const Text('Close'),
                   ),
                   const SizedBox(width: 10),
                   ElevatedButton(
-                    onPressed: () {
-                      if (_formKey.currentState!.validate()) {
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Enquiry sent successfully!')),
-                        );
-                      }
-                    },
+                    onPressed: _isSending ? null : _sendEnquiry,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF00AEEF),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
                     ),
-                    child: const Text('Send Query'),
+                    child: _isSending 
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Send Query'),
                   ),
                 ],
               ),

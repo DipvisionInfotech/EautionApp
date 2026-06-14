@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/header.dart';
 import '../widgets/footer.dart';
-import '../widgets/gemini_info_dialog.dart';
-import '../widgets/enquiry_dialog.dart';
+import '../widgets/auction_section.dart';
 
 class AuctionPage extends StatefulWidget {
   const AuctionPage({super.key});
@@ -12,10 +11,6 @@ class AuctionPage extends StatefulWidget {
 }
 
 class _AuctionPageState extends State<AuctionPage> {
-  String? selectedCategory;
-  String? selectedType;
-  String? selectedLocation;
-
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
@@ -37,14 +32,14 @@ class _AuctionPageState extends State<AuctionPage> {
             ),
             Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: screenWidth > 1200 ? screenWidth * 0.1 : 20,
+                horizontal: screenWidth > 1200 ? screenWidth * 0.08 : 20,
                 vertical: 30,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Auction',
+                    'Upcoming Auctions',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -84,8 +79,6 @@ class _AuctionPageState extends State<AuctionPage> {
               children: [
                 _searchDropdown('Select Category', ['Agri Commodity', 'MS Scrap', 'Textiles', 'Scrap']),
                 const SizedBox(height: 10),
-                _searchDropdown('Listing Type', ['Auction', 'Classified']),
-                const SizedBox(height: 10),
                 _searchDropdown('Location', ['Delhi', 'Mumbai', 'Ahmedabad']),
                 const SizedBox(height: 10),
                 _searchInput('Auction Id/Title'),
@@ -96,8 +89,6 @@ class _AuctionPageState extends State<AuctionPage> {
           : Row(
               children: [
                 Expanded(child: _searchDropdown('Select Category', ['Agri Commodity', 'MS Scrap', 'Textiles', 'Scrap'])),
-                const SizedBox(width: 10),
-                Expanded(child: _searchDropdown('Listing Type', ['Auction', 'Classified'])),
                 const SizedBox(width: 10),
                 Expanded(child: _searchDropdown('Location', ['Delhi', 'Mumbai', 'Ahmedabad'])),
                 const SizedBox(width: 10),
@@ -158,209 +149,62 @@ class _AuctionPageState extends State<AuctionPage> {
   }
 
   Widget _buildAuctionGrid(double screenWidth) {
-    int crossAxisCount = screenWidth > 1500 ? 4 : (screenWidth > 1100 ? 3 : (screenWidth > 800 ? 2 : 1));
+    int crossAxisCount = screenWidth > 1200 ? 2 : 1;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 1500 ? 1.05 : (screenWidth > 1100 ? 0.95 : (screenWidth > 800 ? 1.1 : 1.4)),
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
+        mainAxisExtent: 220,
+        crossAxisSpacing: 25,
+        mainAxisSpacing: 25,
       ),
       itemCount: 4,
       itemBuilder: (context, index) {
-        return _buildAuctionCard(index);
+        final auctions = [
+          {
+            'title': 'STD-PR-2059 | Fire Affected Approx. 1,00,000 Kg of Plant & Machinery on "as is where is" basis.',
+            'image': 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
+            'type': 'Private Auction',
+            'start': '19 Jun 2026 04:00 PM',
+            'end': '19 Jun 2026 05:00 PM',
+            'qty': '100000kg'
+          },
+          {
+            'title': 'STD-PR-2060 | Fire Affected approx. 40,000 Kg of Building (Heavy & Light MS Structure) on "as is where is" basis.',
+            'image': 'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80',
+            'type': 'Private Auction',
+            'start': '19 Jun 2026 04:00 PM',
+            'end': '19 Jun 2026 05:00 PM',
+            'qty': '40000kg'
+          },
+          {
+            'title': 'STD-PR-2061 | Fire Affected approx. 30,000 Kg of Printing Cylinders (MS) on "as is where is" basis.',
+            'image': 'https://images.unsplash.com/photo-1533035353720-f1c6a75cd8ab?auto=format&fit=crop&w=800&q=80',
+            'type': 'Private Auction',
+            'start': '19 Jun 2026 04:00 PM',
+            'end': '19 Jun 2026 05:00 PM',
+            'qty': '30000kg'
+          },
+          {
+            'title': 'STD-PR-2062 | Fire Affected approx. 10,000 Kg of Racks & Furniture on "per kg" basis.',
+            'image': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=800&q=80',
+            'type': 'Private Auction',
+            'start': '19 Jun 2026 04:00 PM',
+            'end': '19 Jun 2026 05:00 PM',
+            'qty': '10000kg'
+          },
+        ];
+        final auction = auctions[index % auctions.length];
+        return AuctionCard(
+          title: auction['title']!,
+          imageUrl: auction['image']!,
+          type: auction['type']!,
+          start: auction['start']!,
+          end: auction['end']!,
+          qty: auction['qty']!,
+        );
       },
-    );
-  }
-
-  void _viewDetail(Map<String, String> auction) {
-    GeminiInfoDialog.show(
-      context,
-      auction['title']!,
-      'Auction Detail for: ${auction['title']}\n\nQuantity: ${auction['qty']}\nStart: ${auction['start']}\nEnd: ${auction['end']}\nCategory: ${auction['cat']}',
-    );
-  }
-
-  void _showInterest(Map<String, String> auction) {
-    EnquiryDialog.show(context, auction['title']!);
-  }
-
-  Widget _buildAuctionCard(int index) {
-    final auctions = [
-      {
-        'title': 'Approx. 22,000 Kg of Damaged MS Trusses and Purlins on "Per Kg" Basis',
-        'image': 'https://images.unsplash.com/photo-1516937941344-00b4e0337589?auto=format&fit=crop&w=800&q=80',
-        'start': '16 Jun 2026 04:00 PM',
-        'end': '16 Jun 2026 05:00 PM',
-        'qty': '22000 kg',
-        'cat': 'M S Scrap',
-        'type': 'Private Auction'
-      },
-      {
-        'title': 'Fire Affected Approx. 25,850 Kg of Fire affected 10 Nos. of Loom Machine',
-        'image': 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=800&q=80',
-        'start': '16 Jun 2026 04:00 PM',
-        'end': '16 Jun 2026 05:00 PM',
-        'qty': '25,850 Kg',
-        'cat': 'Scrap',
-        'type': 'Group Auction'
-      },
-      {
-        'title': 'Fire & Water Affected Approx. 7,800 Kg of Yarn on Beem on "Per Kg" Basis',
-        'image': 'https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?auto=format&fit=crop&w=800&q=80',
-        'start': '16 Jun 2026 04:00 PM',
-        'end': '16 Jun 2026 05:00 PM',
-        'qty': '7,800 Kg',
-        'cat': 'Textiles',
-        'type': 'Private Auction'
-      },
-      {
-        'title': 'Fire & Water Affected Approx. 2,650 Kg of Cotton Fabric',
-        'image': 'https://images.unsplash.com/photo-1528469133744-672527221d66?auto=format&fit=crop&w=800&q=80',
-        'start': '16 Jun 2026 04:00 PM',
-        'end': '16 Jun 2026 05:00 PM',
-        'qty': '2,650 Kg',
-        'cat': 'Fabric',
-        'type': 'Group Auction'
-      },
-    ];
-    final auction = auctions[index % auctions.length];
-    final type = auction['type']!;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8)),
-        ],
-        border: Border.all(color: const Color(0xFFF1F5F9)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Stack(
-              children: [
-                Image.network(
-                  auction['image']!,
-                  width: double.infinity,
-                  height: 160,
-                  fit: BoxFit.cover,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return Container(
-                      height: 160,
-                      color: const Color(0xFFF1F5F9),
-                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    );
-                  },
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 160,
-                    width: double.infinity,
-                    color: const Color(0xFFF1F5F9),
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                        SizedBox(height: 8),
-                        Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: type.contains('Private') ? const Color(0xFF1E293B) : const Color(0xFF0288D1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      type.toUpperCase(),
-                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      auction['title']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1E293B), height: 1.3),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 12),
-                    _rowInfo(Icons.calendar_today_outlined, 'Schedule', '${auction['start']}'),
-                    const SizedBox(height: 6),
-                    _rowInfo(Icons.inventory_2_outlined, 'Quantity', auction['qty']!),
-                    const SizedBox(height: 6),
-                    _rowInfo(Icons.category_outlined, 'Category', auction['cat']!),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () => _viewDetail(auction),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: Color(0xFFE2E8F0)),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text('View Detail', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: ElevatedButton(
-                            onPressed: () => _showInterest(auction),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF0288D1),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                            ),
-                            child: const Text('Show Interest', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _rowInfo(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Row(
-        children: [
-          Icon(icon, size: 14, color: Colors.grey[400]),
-          const SizedBox(width: 6),
-          Text('$label: ', style: TextStyle(fontSize: 11, color: Colors.grey[600])),
-          Expanded(
-            child: Text(value, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
-          ),
-        ],
-      ),
     );
   }
 

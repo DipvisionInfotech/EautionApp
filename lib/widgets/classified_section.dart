@@ -11,7 +11,7 @@ class ClassifiedSection extends StatelessWidget {
     return Container(
       color: Colors.white,
       padding: EdgeInsets.symmetric(
-        horizontal: screenWidth > 600 ? 40.0 : 20.0,
+        horizontal: screenWidth > 1200 ? screenWidth * 0.08 : 20.0,
         vertical: 60.0,
       ),
       child: Column(
@@ -65,18 +65,27 @@ class ClassifiedSection extends StatelessWidget {
           const SizedBox(height: 40),
           LayoutBuilder(builder: (context, constraints) {
             int crossAxisCount = constraints.maxWidth > 1500 ? 4 : (constraints.maxWidth > 1100 ? 3 : (constraints.maxWidth > 700 ? 2 : 1));
-            return GridView.count(
+            
+            final items = [
+              {'title': 'Water Affected Rice', 'qty': '4925 Kg', 'price': '45', 'loc': 'Wardha', 'img': 'https://images.unsplash.com/photo-1586201327111-9f43a5b63547?auto=format&fit=crop&w=500&q=60'},
+              {'title': 'Water Affected Mobiles', 'qty': '28 Pieces', 'price': '2,25,000', 'loc': 'Delhi', 'img': 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=500&q=60'},
+              {'title': 'MS Distribution Panel', 'qty': '500 Kg', 'price': '120', 'loc': 'Mumbai', 'img': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=500&q=60'},
+            ];
+
+            return GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: crossAxisCount,
-              childAspectRatio: constraints.maxWidth > 1500 ? 1.05 : (constraints.maxWidth > 1100 ? 0.95 : (constraints.maxWidth > 700 ? 1.1 : 1.4)),
-              crossAxisSpacing: 20,
-              mainAxisSpacing: 20,
-              children: [
-                _classifiedCard(context, 'Water Affected Rice', '4925 Kg', '45', 'Wardha', 'https://images.unsplash.com/photo-1586201327111-9f43a5b63547?auto=format&fit=crop&w=500&q=60'),
-                _classifiedCard(context, 'Water Affected Mobiles', '28 Pieces', '2,25,000', 'Delhi', 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=500&q=60'),
-                _classifiedCard(context, 'MS Distribution Panel', '500 Kg', '120', 'Mumbai', 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=500&q=60'),
-              ],
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: crossAxisCount,
+                mainAxisExtent: 380,
+                crossAxisSpacing: 24,
+                mainAxisSpacing: 24,
+              ),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return _classifiedCard(context, item['title']!, item['qty']!, item['price']!, item['loc']!, item['img']!);
+              },
             );
           }),
         ],
@@ -88,18 +97,18 @@ class ClassifiedSection extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 20,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 10),
           ),
         ],
-        border: Border.all(color: const Color(0xFFF1F5F9)),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -112,45 +121,47 @@ class ClassifiedSection extends StatelessWidget {
                   child: Image.network(
                     imageUrl,
                     width: double.infinity,
-                    height: 160,
+                    height: 140,
                     fit: BoxFit.cover,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
                       return Container(
-                        height: 160,
-                        color: const Color(0xFFF1F5F9),
+                        height: 140,
+                        color: const Color(0xFFF8FAFC),
                         child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                       );
                     },
                     errorBuilder: (context, error, stackTrace) => Container(
-                      height: 160,
+                      height: 140,
                       width: double.infinity,
-                      color: const Color(0xFFF1F5F9),
+                      color: const Color(0xFFF8FAFC),
                       child: const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
+                          Icon(Icons.image_not_supported_outlined, color: Color(0xFFCBD5E1), size: 48),
                           SizedBox(height: 8),
-                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          Text('Image unavailable', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
                         ],
                       ),
                     ),
                   ),
                 ),
                 Positioned(
-                  bottom: 12,
+                  top: 12,
                   left: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.location_on, size: 12, color: Colors.white),
+                        const Icon(Icons.location_on, size: 14, color: Color(0xFF8BC34A)),
                         const SizedBox(width: 4),
-                        Text(location, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Text(location, style: const TextStyle(color: Color(0xFF1E293B), fontSize: 11, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -165,25 +176,54 @@ class ClassifiedSection extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B), height: 1.3),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF0F172A),
+                        height: 1.2,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 12),
-                    _infoRow(Icons.inventory_2_outlined, 'Qty', qty),
-                    const SizedBox(height: 6),
-                    _infoRow(Icons.payments_outlined, 'Price', '₹$price'),
+                    _detailRow(Icons.inventory_2_outlined, 'Quantity', qty),
+                    const SizedBox(height: 8),
+                    _detailRow(Icons.payments_outlined, 'Price', '₹$price'),
                     const Spacer(),
-                    ElevatedButton(
-                      onPressed: () => EnquiryDialog.show(context, title),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF8BC34A),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    Container(
+                      width: double.infinity,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF8BC34A), Color(0xFF689F38)],
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF8BC34A).withOpacity(0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      child: ElevatedButton(
+                        onPressed: () => EnquiryDialog.show(context, title),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_ios, size: 12),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -195,13 +235,22 @@ class ClassifiedSection extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(IconData icon, String label, String value) {
+  Widget _detailRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: Colors.grey[400]),
-        const SizedBox(width: 6),
-        Text('$label: ', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+        Icon(icon, size: 16, color: const Color(0xFF64748B)),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }

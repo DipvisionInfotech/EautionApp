@@ -40,7 +40,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Classified',
+                    'Classified Listings',
                     style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.bold,
@@ -151,27 +151,24 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
 
   Widget _buildClassifiedGrid(double screenWidth) {
     int crossAxisCount = screenWidth > 1500 ? 4 : (screenWidth > 1100 ? 3 : (screenWidth > 700 ? 2 : 1));
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        childAspectRatio: screenWidth > 1500 ? 1.05 : (screenWidth > 1100 ? 0.95 : (screenWidth > 700 ? 1.1 : 1.4)),
-        crossAxisSpacing: 20,
-        mainAxisSpacing: 20,
+        mainAxisExtent: screenWidth > 700 ? 420 : 400,
+        crossAxisSpacing: 24,
+        mainAxisSpacing: 24,
       ),
-      itemCount: 2,
+      itemCount: 4,
       itemBuilder: (context, index) {
-        return _buildClassifiedCard(index);
+        return _buildClassifiedCard(index, screenWidth);
       },
     );
   }
 
-  void _viewDetail(Map<String, String> item) {
-    EnquiryDialog.show(context, item['title']!);
-  }
-
-  Widget _buildClassifiedCard(int index) {
+  Widget _buildClassifiedCard(int index, double screenWidth) {
     final items = [
       {
         'title': 'Water Affected Rice',
@@ -187,24 +184,38 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
         'price': '2,25,000',
         'location': 'Delhi'
       },
+      {
+        'title': 'MS Distribution Panel',
+        'image': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=500&q=60',
+        'qty': '500 Kg',
+        'price': '120',
+        'location': 'Mumbai'
+      },
+      {
+        'title': 'Industrial Scrap Material',
+        'image': 'https://images.unsplash.com/photo-1532996122724-e3c354a0b15b?auto=format&fit=crop&w=500&q=60',
+        'qty': '10,000 Kg',
+        'price': '85',
+        'location': 'Pune'
+      },
     ];
     final item = items[index % items.length];
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 20,
-            offset: const Offset(0, 4),
+            offset: const Offset(0, 10),
           ),
         ],
-        border: Border.all(color: const Color(0xFFF1F5F9)),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -217,45 +228,31 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                   child: Image.network(
                     item['image']!,
                     width: double.infinity,
-                    height: 160,
+                    height: screenWidth > 700 ? 180 : 160,
                     fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
-                        height: 160,
-                        color: const Color(0xFFF1F5F9),
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      );
-                    },
                     errorBuilder: (context, error, stackTrace) => Container(
-                      height: 160,
+                      height: screenWidth > 700 ? 180 : 160,
                       width: double.infinity,
-                      color: const Color(0xFFF1F5F9),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.image_not_supported_outlined, color: Colors.grey, size: 40),
-                          SizedBox(height: 8),
-                          Text('Image unavailable', style: TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
+                      color: const Color(0xFFF8FAFC),
+                      child: const Center(child: Icon(Icons.image_not_supported_outlined, color: Color(0xFFCBD5E1), size: 48)),
                     ),
                   ),
                 ),
                 Positioned(
-                  bottom: 12,
+                  top: 12,
                   left: 12,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.6),
-                      borderRadius: BorderRadius.circular(4),
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.location_on, size: 12, color: Colors.white),
+                        const Icon(Icons.location_on, size: 14, color: Color(0xFF0288D1)),
                         const SizedBox(width: 4),
-                        Text(item['location']!, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        Text(item['location']!, style: const TextStyle(color: Color(0xFF1E293B), fontSize: 11, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -270,25 +267,42 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                   children: [
                     Text(
                       item['title']!,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF1E293B), height: 1.3),
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF0F172A), height: 1.2),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 12),
-                    _cardRow(Icons.inventory_2_outlined, 'Qty', item['qty']!),
-                    const SizedBox(height: 6),
-                    _cardRow(Icons.payments_outlined, 'Price', '₹${item['price']}'),
+                    _detailRow(Icons.inventory_2_outlined, 'Quantity', item['qty']!),
+                    const SizedBox(height: 8),
+                    _detailRow(Icons.payments_outlined, 'Price', '₹${item['price']}'),
                     const Spacer(),
-                    ElevatedButton(
-                      onPressed: () => EnquiryDialog.show(context, item['title']!),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0288D1),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        minimumSize: const Size(double.infinity, 50),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    Container(
+                      width: double.infinity,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        gradient: const LinearGradient(colors: [Color(0xFF0288D1), Color(0xFF01579B)]),
+                        boxShadow: [
+                          BoxShadow(color: const Color(0xFF0288D1).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+                        ],
                       ),
-                      child: const Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      child: ElevatedButton(
+                        onPressed: () => EnquiryDialog.show(context, item['title']!),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          shadowColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_ios, size: 12),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -300,13 +314,19 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
     );
   }
 
-  Widget _cardRow(IconData icon, String label, String value) {
+  Widget _detailRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: Colors.grey[400]),
-        const SizedBox(width: 6),
-        Text('$label: ', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-        Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF1E293B))),
+        Icon(icon, size: 16, color: const Color(0xFF64748B)),
+        const SizedBox(width: 8),
+        Text('$label: ', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
       ],
     );
   }

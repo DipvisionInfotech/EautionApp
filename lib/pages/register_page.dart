@@ -21,6 +21,7 @@ class _RegisterPageState extends State<RegisterPage> {
   String _userType = 'Buyer';
   bool _agreeToTerms = false;
   bool _selectAllCategories = false;
+  bool _isRegistering = false;
 
   @override
   void dispose() {
@@ -29,6 +30,33 @@ class _RegisterPageState extends State<RegisterPage> {
     _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleRegister() async {
+    if (_formKey.currentState!.validate()) {
+      if (!_agreeToTerms) {
+        GeminiInfoDialog.show(
+          context,
+          'Action Required',
+          'Please agree to the Terms and Conditions to proceed with the registration.',
+        );
+        return;
+      }
+
+      setState(() => _isRegistering = true);
+
+      // Simulate API call
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      if (!mounted) return;
+      setState(() => _isRegistering = false);
+
+      GeminiInfoDialog.show(
+        context,
+        'Registration Successful',
+        'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully as a $_userType. You can now participate in auctions and manage your profile. A verification email has been sent to ${_emailController.text}.\n\nNext Steps:\n1. Verify your email address.\n2. Complete your profile details.\n3. Explore active auctions.',
+      );
+    }
   }
 
   @override
@@ -196,30 +224,15 @@ class _RegisterPageState extends State<RegisterPage> {
             width: double.infinity,
             height: 50,
             child: ElevatedButton(
-              onPressed: () {
-                if (_formKey.currentState!.validate()) {
-                  if (!_agreeToTerms) {
-                    GeminiInfoDialog.show(
-                      context,
-                      'Action Required',
-                      'Please agree to the Terms and Conditions to proceed with the registration.',
-                    );
-                    return;
-                  }
-                  // Success - Show dialog instead of toast as per new standard
-                  GeminiInfoDialog.show(
-                    context,
-                    'Registration Successful',
-                    'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully as a ${_userType}. You can now participate in auctions and manage your profile. A verification email has been sent to ${_emailController.text}.\n\nNext Steps:\n1. Verify your email address.\n2. Complete your profile details.\n3. Explore active auctions.',
-                  );
-                }
-              },
+              onPressed: _isRegistering ? null : _handleRegister,
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0288D1),
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
               ),
-              child: const Text('Register', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child: _isRegistering
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : const Text('Register', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
