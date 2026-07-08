@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'gemini_info_dialog.dart';
+import '../services/api_service.dart';
 
 class HeroSection extends StatefulWidget {
   const HeroSection({super.key});
@@ -9,10 +9,28 @@ class HeroSection extends StatefulWidget {
 }
 
 class _HeroSectionState extends State<HeroSection> {
-  String? selectedCategory;
+  String? selectedCategorySlug;
   String? selectedType;
   String? selectedLocation;
   final TextEditingController _searchController = TextEditingController();
+  List<dynamic> _categories = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final cats = await ApiService.getCategories();
+    if (mounted) {
+      setState(() {
+        _categories = cats;
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -103,11 +121,7 @@ class _HeroSectionState extends State<HeroSection> {
                       if (screenWidth > 800)
                         Row(
                           children: [
-                            Expanded(child: _searchDropdown('Category', [
-                              'Agri Commodity', 'Agriculture', 'Aluminium', 'Automotive',
-                              'Building Material', 'Cables', 'Chemicals', 'Electronics',
-                              'Metal Scrap', 'Plant & Machinery', 'Textiles', 'Vehicle'
-                            ], selectedCategory, (val) => setState(() => selectedCategory = val))),
+                            Expanded(child: _categoryDropdown()),
                             const SizedBox(width: 12),
                             Expanded(child: _searchDropdown('Listing Type', ['Auction', 'Classified'], selectedType, (val) => setState(() => selectedType = val))),
                             const SizedBox(width: 12),
@@ -115,7 +129,7 @@ class _HeroSectionState extends State<HeroSection> {
                           ],
                         )
                       else ...[
-                        _searchDropdown('Category', ['Agri Commodity', 'Agriculture', 'Aluminium', 'Automotive', 'Building Material', 'Cables', 'Chemicals', 'Electronics', 'Metal Scrap', 'Plant & Machinery', 'Textiles', 'Vehicle'], selectedCategory, (val) => setState(() => selectedCategory = val)),
+                        _categoryDropdown(),
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -214,11 +228,12 @@ class _HeroSectionState extends State<HeroSection> {
       ),
       child: ElevatedButton(
         onPressed: () {
-          GeminiInfoDialog.show(
-            context,
-            'Search Results',
-            'Searching for: "${_searchController.text}"\nCategory: ${selectedCategory ?? "All"}\nType: ${selectedType ?? "All"}\nLocation: ${selectedLocation ?? "All"}',
-          );
+          if (selectedType == 'Classified') {
+            Navigator.pushNamed(context, '/classified');
+          } else {
+            // Default to auction
+            Navigator.pushNamed(context, '/auction');
+          }
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.transparent,
@@ -227,6 +242,45 @@ class _HeroSectionState extends State<HeroSection> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: const Text('Search', style: TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _categoryDropdown() {
+    if (_isLoading) {
+      return Container(
+        height: 50,
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+        alignment: Alignment.centerLeft,
+        child: const Text('Loading categories...', style: TextStyle(color: Colors.grey, fontSize: 14)),
+      );
+    }
+
+    final items = [
+      const DropdownMenuItem<String>(value: null, child: Text('All Categories')),
+      ..._categories.map((c) => DropdownMenuItem<String>(
+            value: c['slug']?.toString(),
+            child: Text(c['name']?.toString() ?? ''),
+          )),
+    ];
+
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          isExpanded: true,
+          value: selectedCategorySlug,
+          hint: const Text('Category', style: TextStyle(fontSize: 14)),
+          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.grey),
+          items: items,
+          onChanged: (v) => setState(() => selectedCategorySlug = v),
+        ),
       ),
     );
   }

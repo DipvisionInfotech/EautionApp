@@ -3,6 +3,7 @@ import '../widgets/header.dart';
 import '../widgets/footer.dart';
 import '../widgets/login_dialog.dart';
 import '../widgets/gemini_info_dialog.dart';
+import '../services/api_service.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -22,6 +23,24 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _agreeToTerms = false;
   bool _selectAllCategories = false;
   bool _isRegistering = false;
+  
+  List<dynamic> _categories = [];
+  String? _selectedCategorySlug;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    final cats = await ApiService.getCategories();
+    if (mounted) {
+      setState(() {
+        _categories = cats;
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -45,17 +64,71 @@ class _RegisterPageState extends State<RegisterPage> {
 
       setState(() => _isRegistering = true);
 
-      // Simulate API call
-      await Future.delayed(const Duration(milliseconds: 1500));
+      // Make actual API call to Django
+      String apiRole = _userType == 'Buyer' ? 'bidder' : _userType.toLowerCase();
+      
+      // Determine preferred categories
+      List<String>? preferredCats;
+      if (_selectAllCategories) {
+        preferredCats = _categories.map((c) => c['slug'].toString()).toList();
+      } else if (_selectedCategorySlug != null) {
+        preferredCats = [_selectedCategorySlug!];
+      }
 
-      if (!mounted) return;
-      setState(() => _isRegistering = false);
+      try {
+        final result = await ApiService.register(
+          _emailController.text,
+          _passwordController.text,
+          _nameController.text,
+          apiRole,
+          preferredCategories: preferredCats,
+        );
 
-      GeminiInfoDialog.show(
-        context,
-        'Registration Successful',
-        'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully as a $_userType. You can now participate in auctions and manage your profile. A verification email has been sent to ${_emailController.text}.\n\nNext Steps:\n1. Verify your email address.\n2. Complete your profile details.\n3. Explore active auctions.',
-      );
+        if (!mounted) return;
+        setState(() => _isRegistering = false);
+
+        if (result['success']) {
+          GeminiInfoDialog.show(
+            context,
+            'Registration Successful',
+            'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully as a $_userType and you are securely logged in. You can now participate in auctions and manage your profile.\n\nNext Steps:\n1. Update your KYC details.\n2. Explore active auctions.',
+          );
+          // Optional: Navigate to dashboard after success
+          // Future.delayed(const Duration(seconds: 2), () {
+          //   Navigator.pushReplacementNamed(context, '/');
+          // });
+        } else {
+          // Show error from Django
+          String errorMsg = 'An error occurred. Please try again.';
+          if (result['error'] != null) {
+            if (result['error'] is Map) {
+              // Extract the first error message from the JSON map
+              final Map errors = result['error'];
+              if (errors.isNotEmpty) {
+                final key = errors.keys.first;
+                final value = errors[key];
+                errorMsg = '$key: ${value is List ? value.first : value}';
+              }
+            } else {
+              errorMsg = result['error'].toString();
+            }
+          }
+          
+          GeminiInfoDialog.show(
+            context,
+            'Registration Failed',
+            errorMsg,
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isRegistering = false);
+        GeminiInfoDialog.show(
+          context,
+          'Network Error',
+          'Failed to connect to the server. Please ensure the backend is running ($e)',
+        );
+      }
     }
   }
 
@@ -201,7 +274,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ],
           ),
           const SizedBox(height: 10),
-          _buildTextField('or Choose category...'),
+          _buildCategoryDropdown(),
           const SizedBox(height: 20),
           Row(
             children: [
@@ -266,6 +339,41 @@ class _RegisterPageState extends State<RegisterPage> {
           borderSide: const BorderSide(color: Colors.red),
         ),
       ),
+    );
+  }
+
+  Widget _buildCategoryDropdown() {
+    if (_categories.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        child: Text('Loading categories...', style: TextStyle(color: Colors.grey)),
+      );
+    }
+
+    return DropdownButtonFormField<String>(
+      decoration: InputDecoration(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(25),
+          borderSide: BorderSide(color: Colors.grey.withOpacity(0.3)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(25),
+          borderSide: BorderSide(color: Colors.grey.withOpacity(0.3)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(25),
+          borderSide: const BorderSide(color: Color(0xFF0288D1)),
+        ),
+      ),
+      hint: const Text('or Choose category...', style: TextStyle(fontSize: 14, color: Colors.grey)),
+      value: _selectedCategorySlug,
+      items: _categories.map((c) => DropdownMenuItem<String>(
+        value: c['slug'].toString(),
+        child: Text(c['name'].toString()),
+      )).toList(),
+      onChanged: _selectAllCategories ? null : (val) => setState(() => _selectedCategorySlug = val),
+      disabledHint: const Text('All categories selected'),
     );
   }
 

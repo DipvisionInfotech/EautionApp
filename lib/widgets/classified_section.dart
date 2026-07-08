@@ -1,9 +1,35 @@
 import 'package:flutter/material.dart';
-import 'gemini_info_dialog.dart';
 import 'enquiry_dialog.dart';
+import '../services/api_service.dart';
 
-class ClassifiedSection extends StatelessWidget {
+class ClassifiedSection extends StatefulWidget {
   const ClassifiedSection({super.key});
+
+  @override
+  State<ClassifiedSection> createState() => _ClassifiedSectionState();
+}
+
+class _ClassifiedSectionState extends State<ClassifiedSection> {
+  List<dynamic> _items = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadListings();
+  }
+
+  Future<void> _loadListings() async {
+    final result = await ApiService.getClassifieds();
+    if (mounted) {
+      setState(() {
+        _items = result['success'] == true
+            ? ((result['data']['results'] as List<dynamic>?) ?? []).take(3).toList()
+            : [];
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,37 +89,76 @@ class ClassifiedSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 40),
-          LayoutBuilder(builder: (context, constraints) {
-            int crossAxisCount = constraints.maxWidth > 1500 ? 4 : (constraints.maxWidth > 1100 ? 3 : (constraints.maxWidth > 700 ? 2 : 1));
-            
-            final items = [
-              {'title': 'Water Affected Rice', 'qty': '4925 Kg', 'price': '45', 'loc': 'Wardha', 'img': 'https://images.unsplash.com/photo-1586201327111-9f43a5b63547?auto=format&fit=crop&w=500&q=60'},
-              {'title': 'Water Affected Mobiles', 'qty': '28 Pieces', 'price': '2,25,000', 'loc': 'Delhi', 'img': 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=500&q=60'},
-              {'title': 'MS Distribution Panel', 'qty': '500 Kg', 'price': '120', 'loc': 'Mumbai', 'img': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=500&q=60'},
-            ];
-
-            return GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: crossAxisCount,
-                mainAxisExtent: 380,
-                crossAxisSpacing: 24,
-                mainAxisSpacing: 24,
+          if (_isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(40),
+                child: CircularProgressIndicator(color: Color(0xFF8BC34A)),
               ),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return _classifiedCard(context, item['title']!, item['qty']!, item['price']!, item['loc']!, item['img']!);
-              },
-            );
-          }),
+            )
+          else if (_items.isEmpty)
+            _buildEmptyState(context)
+          else
+            LayoutBuilder(builder: (context, constraints) {
+              int crossAxisCount = constraints.maxWidth > 1500
+                  ? 4
+                  : (constraints.maxWidth > 1100 ? 3 : (constraints.maxWidth > 700 ? 2 : 1));
+
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: crossAxisCount,
+                  mainAxisExtent: 380,
+                  crossAxisSpacing: 24,
+                  mainAxisSpacing: 24,
+                ),
+                itemCount: _items.length,
+                itemBuilder: (context, index) {
+                  return _classifiedCard(context, _items[index]);
+                },
+              );
+            }),
         ],
       ),
     );
   }
 
-  Widget _classifiedCard(BuildContext context, String title, String qty, String price, String location, String imageUrl) {
+  Widget _buildEmptyState(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          children: [
+            Icon(Icons.list_alt_outlined, size: 60, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text('No classified listings yet',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/classified'),
+              child: const Text('Browse All Listings →'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _classifiedCard(BuildContext context, Map<String, dynamic> item) {
+    final title = item['title']?.toString() ?? 'Untitled';
+    final qty = item['quantity']?.toString() ?? '';
+    final priceDisplay = item['price_display']?.toString().isNotEmpty == true
+        ? item['price_display'].toString()
+        : item['price_per_unit'] != null
+            ? '₹${item['price_per_unit']}'
+            : 'Contact for price';
+    final location = item['location']?.toString() ?? '';
+    final images = item['images'] as List<dynamic>?;
+    // Dashboard shows thumbnails — images list here has no signed URLs (include_images=False)
+    // so we show a placeholder; full URLs available on detail page
+    final hasImage = images != null && images.isNotEmpty;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -114,58 +179,42 @@ class ClassifiedSection extends StatelessWidget {
           children: [
             Stack(
               children: [
-                InkWell(
-                  onTap: () {
-                    GeminiInfoDialog.show(context, 'Classified Image', 'Viewing high-resolution image of $title.');
-                  },
-                  child: Image.network(
-                    imageUrl,
-                    width: double.infinity,
-                    height: 140,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return Container(
+                hasImage
+                    ? Image.network(
+                        images![0].toString(),
+                        width: double.infinity,
                         height: 140,
-                        color: const Color(0xFFF8FAFC),
-                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                      );
-                    },
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      height: 140,
-                      width: double.infinity,
-                      color: const Color(0xFFF8FAFC),
-                      child: const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return _imagePlaceholder();
+                        },
+                        errorBuilder: (_, __, ___) => _imagePlaceholder(),
+                      )
+                    : _imagePlaceholder(),
+                if (location.isNotEmpty)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.image_not_supported_outlined, color: Color(0xFFCBD5E1), size: 48),
-                          SizedBox(height: 8),
-                          Text('Image unavailable', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+                          const Icon(Icons.location_on, size: 14, color: Color(0xFF8BC34A)),
+                          const SizedBox(width: 4),
+                          Text(location,
+                              style: const TextStyle(
+                                  color: Color(0xFF1E293B), fontSize: 11, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.9),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.location_on, size: 14, color: Color(0xFF8BC34A)),
-                        const SizedBox(width: 4),
-                        Text(location, style: const TextStyle(color: Color(0xFF1E293B), fontSize: 11, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
             Expanded(
@@ -186,9 +235,9 @@ class ClassifiedSection extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 12),
-                    _detailRow(Icons.inventory_2_outlined, 'Quantity', qty),
-                    const SizedBox(height: 8),
-                    _detailRow(Icons.payments_outlined, 'Price', '₹$price'),
+                    if (qty.isNotEmpty) _detailRow(Icons.inventory_2_outlined, 'Quantity', qty),
+                    if (qty.isNotEmpty) const SizedBox(height: 8),
+                    _detailRow(Icons.payments_outlined, 'Price', priceDisplay),
                     const Spacer(),
                     Container(
                       width: double.infinity,
@@ -218,7 +267,8 @@ class ClassifiedSection extends StatelessWidget {
                         child: const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text('View Detail', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                            Text('Enquire Now',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                             SizedBox(width: 8),
                             Icon(Icons.arrow_forward_ios, size: 12),
                           ],
@@ -235,21 +285,32 @@ class ClassifiedSection extends StatelessWidget {
     );
   }
 
+  Widget _imagePlaceholder() {
+    return Container(
+      height: 140,
+      width: double.infinity,
+      color: const Color(0xFFF8FAFC),
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_not_supported_outlined, color: Color(0xFFCBD5E1), size: 40),
+          SizedBox(height: 6),
+          Text('No image', style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
   Widget _detailRow(IconData icon, String label, String value) {
     return Row(
       children: [
         Icon(icon, size: 16, color: const Color(0xFF64748B)),
         const SizedBox(width: 8),
-        Text(
-          '$label: ',
-          style: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-        ),
+        Text('$label: ', style: const TextStyle(fontSize: 13, color: Color(0xFF64748B))),
         Expanded(
-          child: Text(
-            value,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text(value,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF334155)),
+              overflow: TextOverflow.ellipsis),
         ),
       ],
     );

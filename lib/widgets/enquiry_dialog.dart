@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'gemini_info_dialog.dart';
+import '../services/api_service.dart';
 
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
@@ -44,19 +45,41 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   Future<void> _sendEnquiry() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSending = true);
-      
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 1));
-      
-      if (!mounted) return;
-      setState(() => _isSending = false);
-      
-      Navigator.pop(context);
-      GeminiInfoDialog.show(
-        context,
-        'Enquiry Submitted',
-        'Thank you for your interest in "${widget.auctionTitle}". Our marketing team (Amit Mishra) has been notified and will contact you shortly at ${_emailController.text} or ${_mobileController.text}.',
-      );
+
+      try {
+        final result = await ApiService.submitEnquiry(
+          name: _nameController.text,
+          email: _emailController.text,
+          phone: _mobileController.text,
+          message: _messageController.text,
+        );
+
+        if (!mounted) return;
+        setState(() => _isSending = false);
+
+        if (result['success']) {
+          Navigator.pop(context);
+          GeminiInfoDialog.show(
+            context,
+            'Enquiry Submitted',
+            'Thank you for your interest in "${widget.auctionTitle}". Our team has been notified and will contact you shortly at ${_emailController.text} or ${_mobileController.text}.',
+          );
+        } else {
+          GeminiInfoDialog.show(
+            context,
+            'Submission Failed',
+            'Could not submit your enquiry. Please check your details and try again.',
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        setState(() => _isSending = false);
+        GeminiInfoDialog.show(
+          context,
+          'Network Error',
+          'Failed to connect to the server. Please ensure you have an internet connection.',
+        );
+      }
     }
   }
 
@@ -174,10 +197,26 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                         decoration: _inputDecoration(''),
                       ),
                       const SizedBox(height: 20),
-                      const Text('Helpline', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      const Text('Name: Amit Mishra', style: TextStyle(fontSize: 13)),
-                      const Text('Email: marketing04@sealthedeal.co.in', style: TextStyle(fontSize: 13)),
-                      const Text('Mobile: 9266315793', style: TextStyle(fontSize: 13)),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F9FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBAE6FD)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: Color(0xFF0288D1)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Our team will review your enquiry and contact you within 24 hours.',
+                                style: TextStyle(fontSize: 12, color: Color(0xFF0369A1)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),

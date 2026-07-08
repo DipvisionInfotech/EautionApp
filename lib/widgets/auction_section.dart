@@ -1,11 +1,40 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:intl/intl.dart';
-import 'gemini_info_dialog.dart';
 import 'enquiry_dialog.dart';
+import '../services/api_service.dart';
+import '../pages/live_auction_page.dart';
 
-class AuctionSection extends StatelessWidget {
+// ─── Dashboard Homepage Section (shows 4 latest rooms) ────────────────────────
+
+class AuctionSection extends StatefulWidget {
   const AuctionSection({super.key});
+
+  @override
+  State<AuctionSection> createState() => _AuctionSectionState();
+}
+
+class _AuctionSectionState extends State<AuctionSection> {
+  List<dynamic> _rooms = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRooms();
+  }
+
+  Future<void> _loadRooms() async {
+    final result = await ApiService.getRooms();
+    if (mounted) {
+      setState(() {
+        _rooms = result['success'] == true
+            ? ((result['data']['results'] as List<dynamic>?) ?? []).take(4).toList()
+            : [];
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,13 +101,20 @@ class AuctionSection extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 40),
-          if (isMobile)
+          if (_isLoading)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(40),
+              child: CircularProgressIndicator(color: Color(0xFF0288D1)),
+            ))
+          else if (_rooms.isEmpty)
+            _buildEmptyState()
+          else if (isMobile)
             ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: 4,
+              itemCount: _rooms.length,
               separatorBuilder: (context, index) => const SizedBox(height: 24),
-              itemBuilder: (context, index) => _auctionCardForIndex(index),
+              itemBuilder: (context, index) => AuctionCard.fromRoom(_rooms[index]),
             )
           else
             GridView.builder(
@@ -90,78 +126,98 @@ class AuctionSection extends StatelessWidget {
                 crossAxisSpacing: 30,
                 mainAxisSpacing: 30,
               ),
-              itemCount: 4,
-              itemBuilder: (context, index) => _auctionCardForIndex(index),
+              itemCount: _rooms.length,
+              itemBuilder: (context, index) => AuctionCard.fromRoom(_rooms[index]),
             ),
         ],
       ),
     );
   }
 
-  Widget _auctionCardForIndex(int index) {
-    final auctions = [
-      {
-        'title': 'STD-PR-2059 | Fire Affected Approx. 1,00,000 Kg of Plant & Machinery on "as is where is" basis.',
-        'image': 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
-        'type': 'Private Auction',
-        'start': '19 Jun 2026 04:00 PM',
-        'end': '19 Jun 2026 05:00 PM',
-        'qty': '100000kg'
-      },
-      {
-        'title': 'STD-PR-2060 | Fire Affected approx. 40,000 Kg of Building (Heavy & Light MS Structure) on "as is where is" basis.',
-        'image': 'https://images.unsplash.com/photo-1504917595217-d4dc5ebe6122?auto=format&fit=crop&w=800&q=80',
-        'type': 'Private Auction',
-        'start': '19 Jun 2026 04:00 PM',
-        'end': '19 Jun 2026 05:00 PM',
-        'qty': '40000kg'
-      },
-      {
-        'title': 'STD-PR-2061 | Fire Affected approx. 30,000 Kg of Printing Cylinders (MS) on "as is where is" basis.',
-        'image': 'https://images.unsplash.com/photo-1533035353720-f1c6a75cd8ab?auto=format&fit=crop&w=800&q=80',
-        'type': 'Private Auction',
-        'start': '19 Jun 2026 04:00 PM',
-        'end': '19 Jun 2026 05:00 PM',
-        'qty': '30000kg'
-      },
-      {
-        'title': 'STD-PR-2062 | Fire Affected approx. 10,000 Kg of Racks & Furniture on "per kg" basis.',
-        'image': 'https://images.unsplash.com/photo-1558444479-c8f010b49862?auto=format&fit=crop&w=800&q=80',
-        'type': 'Private Auction',
-        'start': '19 Jun 2026 04:00 PM',
-        'end': '19 Jun 2026 05:00 PM',
-        'qty': '10000kg'
-      },
-    ];
-    final auction = auctions[index % auctions.length];
-    return AuctionCard(
-      title: auction['title']!,
-      imageUrl: auction['image']!,
-      type: auction['type']!,
-      start: auction['start']!,
-      end: auction['end']!,
-      qty: auction['qty']!,
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          children: [
+            Icon(Icons.gavel_outlined, size: 60, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text('No auctions available right now',
+                style: TextStyle(fontSize: 16, color: Colors.grey.shade500)),
+            const SizedBox(height: 8),
+            Text('Check back soon for upcoming auction listings.',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+          ],
+        ),
+      ),
     );
   }
 }
 
+// ─── AuctionCard ──────────────────────────────────────────────────────────────
+
 class AuctionCard extends StatefulWidget {
   final String title;
   final String imageUrl;
-  final String type;
-  final String start;
-  final String end;
+  final String type;        // 'Public Auction' | 'Private Auction' | 'Members Only'
+  final DateTime? startTime;
+  final DateTime? endTime;
   final String qty;
+  final String roomId;
+  final String status;      // 'upcoming' | 'live' | 'ended' | 'draft'
 
   const AuctionCard({
     super.key,
     required this.title,
     required this.imageUrl,
     required this.type,
-    required this.start,
-    required this.end,
+    this.startTime,
+    this.endTime,
     required this.qty,
+    required this.roomId,
+    required this.status,
   });
+
+  /// Build an AuctionCard from the API response map
+  factory AuctionCard.fromRoom(Map<String, dynamic> room) {
+    final item = room['item'] as Map<String, dynamic>?;
+    final images = item?['images'] as List<dynamic>?;
+    final imageUrl = (images != null && images.isNotEmpty)
+        ? images[0].toString()
+        : 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80';
+
+    final visibility = room['visibility']?.toString() ?? 'public';
+    String type;
+    if (visibility == 'members_only') {
+      type = 'Private Auction';
+    } else if (visibility == 'hidden') {
+      type = 'Restricted';
+    } else {
+      type = 'Public Auction';
+    }
+
+    DateTime? startTime;
+    DateTime? endTime;
+    try {
+      if (room['scheduled_start'] != null) {
+        startTime = DateTime.parse(room['scheduled_start'].toString()).toLocal();
+      }
+      if (room['scheduled_end'] != null) {
+        endTime = DateTime.parse(room['scheduled_end'].toString()).toLocal();
+      }
+    } catch (_) {}
+
+    return AuctionCard(
+      title: room['title']?.toString() ?? 'Untitled Auction',
+      imageUrl: imageUrl,
+      type: type,
+      startTime: startTime,
+      endTime: endTime,
+      qty: item?['quantity']?.toString() ?? '',
+      roomId: room['id']?.toString() ?? '',
+      status: room['status']?.toString() ?? 'upcoming',
+    );
+  }
 
   @override
   State<AuctionCard> createState() => _AuctionCardState();
@@ -172,7 +228,6 @@ class _AuctionCardState extends State<AuctionCard> {
   Duration _timeLeft = Duration.zero;
   String _statusText = 'Loading...';
   Color _statusColor = const Color(0xFF555555);
-  bool _isUpcoming = true;
 
   @override
   void initState() {
@@ -187,47 +242,40 @@ class _AuctionCardState extends State<AuctionCard> {
   }
 
   void _startTimer() {
-    try {
-      DateFormat format = DateFormat("dd MMM yyyy hh:mm a");
-      DateTime startTime = format.parse(widget.start);
-      DateTime endTime = format.parse(widget.end);
-      
-      _updateTime(startTime, endTime);
-      
-      _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        _updateTime(startTime, endTime);
-      });
-    } catch (e) {
-      debugPrint("Error parsing date: $e");
-      setState(() {
-        _statusText = 'Invalid Date';
-      });
-    }
+    _updateTime();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _updateTime());
   }
 
-  void _updateTime(DateTime startTime, DateTime endTime) {
+  void _updateTime() {
     if (!mounted) return;
-    
     final now = DateTime.now();
-    
+    final start = widget.startTime;
+    final end = widget.endTime;
+
     setState(() {
-      if (now.isBefore(startTime)) {
+      if (widget.status == 'ended' || widget.status == 'cancelled') {
+        _statusText = 'Auction Ended';
+        _statusColor = Colors.grey;
+        _timeLeft = Duration.zero;
+      } else if (start != null && now.isBefore(start)) {
         _statusText = 'Starts In : ';
         _statusColor = const Color(0xFF555555);
-        _timeLeft = startTime.difference(now);
-        _isUpcoming = true;
-      } else if (now.isAfter(startTime) && now.isBefore(endTime)) {
+        _timeLeft = start.difference(now);
+      } else if (widget.status == 'live' || (start != null && end != null && now.isAfter(start) && now.isBefore(end))) {
         _statusText = 'LIVE NOW';
         _statusColor = Colors.red;
-        _timeLeft = endTime.difference(now);
-        _isUpcoming = false;
+        _timeLeft = end != null ? end.difference(now) : Duration.zero;
       } else {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
         _timeLeft = Duration.zero;
-        _isUpcoming = false;
       }
     });
+  }
+
+  String _formatDateTime(DateTime? dt) {
+    if (dt == null) return 'TBD';
+    return DateFormat('dd MMM yyyy hh:mm a').format(dt);
   }
 
   @override
@@ -262,7 +310,7 @@ class _AuctionCardState extends State<AuctionCard> {
                       width: 120,
                       height: 90,
                       fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
+                      errorBuilder: (_, __, ___) => Container(
                         width: 120,
                         height: 90,
                         color: const Color(0xFFE2E8F0),
@@ -275,9 +323,9 @@ class _AuctionCardState extends State<AuctionCard> {
                     child: Column(
                       children: [
                         _infoRow('Auction Type', widget.type, isBadge: true),
-                        _infoRow('Start Time', widget.start),
-                        _infoRow('End Time', widget.end),
-                        _infoRow('Quantity', widget.qty),
+                        _infoRow('Start Time', _formatDateTime(widget.startTime)),
+                        _infoRow('End Time', _formatDateTime(widget.endTime)),
+                        if (widget.qty.isNotEmpty) _infoRow('Quantity', widget.qty),
                       ],
                     ),
                   ),
@@ -307,7 +355,7 @@ class _AuctionCardState extends State<AuctionCard> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   bool isExtraSmall = constraints.maxWidth < 300;
-                  
+
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -316,17 +364,17 @@ class _AuctionCardState extends State<AuctionCard> {
                           Text(
                             _statusText,
                             style: TextStyle(
-                              fontSize: isExtraSmall ? 10 : 12, 
-                              fontWeight: FontWeight.bold, 
+                              fontSize: isExtraSmall ? 10 : 12,
+                              fontWeight: FontWeight.bold,
                               color: _statusColor,
                             ),
                           ),
-                          if (_statusText != 'Auction Ended' && _statusText != 'Invalid Date') ...[
+                          if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
                             _timerBox('${_timeLeft.inDays}D', isExtraSmall),
                             _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
-                            _timeLeft.inMinutes > 0 
-                              ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
-                              : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
+                            _timeLeft.inMinutes > 0
+                                ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
+                                : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
                           ],
                         ],
                       ),
@@ -334,18 +382,39 @@ class _AuctionCardState extends State<AuctionCard> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          _actionButton(context, 'View', const Color(0xFF03A9F4), () {
-                            GeminiInfoDialog.show(context, 'Details', 'Complete auction specs for ${widget.title}');
-                          }, isExtraSmall),
+                          _actionButton(
+                            context, 'View Details',
+                            const Color(0xFF03A9F4),
+                            () => EnquiryDialog.show(context, widget.title),
+                            isExtraSmall,
+                          ),
                           const SizedBox(width: 6),
-                          _actionButton(context, _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest', _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A), () {
-                            EnquiryDialog.show(context, widget.title);
-                          }, isExtraSmall),
+                          _actionButton(
+                            context,
+                            _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
+                            _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A),
+                            () {
+                              if (_statusText == 'LIVE NOW') {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => LiveAuctionPage(
+                                      roomId: widget.roomId,
+                                      roomTitle: widget.title,
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                EnquiryDialog.show(context, widget.title);
+                              }
+                            },
+                            isExtraSmall,
+                          ),
                         ],
                       ),
                     ],
                   );
-                }
+                },
               ),
             ),
           ],
@@ -360,10 +429,8 @@ class _AuctionCardState extends State<AuctionCard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF777777), fontWeight: FontWeight.w500),
-          ),
+          Text(label,
+              style: const TextStyle(fontSize: 11, color: Color(0xFF777777), fontWeight: FontWeight.w500)),
           const SizedBox(width: 4),
           if (isBadge)
             Container(
@@ -372,19 +439,15 @@ class _AuctionCardState extends State<AuctionCard> {
                 color: const Color(0xFF0288D1),
                 borderRadius: BorderRadius.circular(4),
               ),
-              child: Text(
-                value,
-                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-              ),
+              child: Text(value,
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
             )
           else
             Flexible(
-              child: Text(
-                value,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF333333)),
-                textAlign: TextAlign.right,
-                overflow: TextOverflow.ellipsis,
-              ),
+              child: Text(value,
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF333333)),
+                  textAlign: TextAlign.right,
+                  overflow: TextOverflow.ellipsis),
             ),
         ],
       ),
@@ -399,10 +462,9 @@ class _AuctionCardState extends State<AuctionCard> {
         color: const Color(0xFF03A9F4),
         borderRadius: BorderRadius.circular(2),
       ),
-      child: Text(
-        text,
-        style: TextStyle(color: Colors.white, fontSize: isExtraSmall ? 9 : 11, fontWeight: FontWeight.bold),
-      ),
+      child: Text(text,
+          style: TextStyle(
+              color: Colors.white, fontSize: isExtraSmall ? 9 : 11, fontWeight: FontWeight.bold)),
     );
   }
 
@@ -411,14 +473,10 @@ class _AuctionCardState extends State<AuctionCard> {
       onTap: onPressed,
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: isExtraSmall ? 8 : 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(color: Colors.white, fontSize: isExtraSmall ? 10 : 12, fontWeight: FontWeight.bold),
-        ),
+        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)),
+        child: Text(label,
+            style: TextStyle(
+                color: Colors.white, fontSize: isExtraSmall ? 10 : 12, fontWeight: FontWeight.bold)),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/header.dart';
 import '../widgets/footer.dart';
 import '../widgets/gemini_info_dialog.dart';
+import '../services/api_service.dart';
 
 class ContactUsPage extends StatelessWidget {
   const ContactUsPage({super.key});
@@ -159,6 +160,7 @@ class ContactUsPage extends StatelessWidget {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final emailController = TextEditingController();
+    final subjectController = TextEditingController();
     final messageController = TextEditingController();
 
     return Container(
@@ -202,6 +204,12 @@ class ContactUsPage extends StatelessWidget {
             ),
             const SizedBox(height: 20),
             TextFormField(
+              controller: subjectController,
+              decoration: _inputDecoration('Subject'),
+              validator: (v) => v == null || v.isEmpty ? 'Please enter a subject' : null,
+            ),
+            const SizedBox(height: 20),
+            TextFormField(
               controller: messageController,
               maxLines: 4,
               decoration: _inputDecoration('Your Message'),
@@ -214,14 +222,41 @@ class ContactUsPage extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: () {
                   if (formKey.currentState!.validate()) {
-                    GeminiInfoDialog.show(
-                      context,
-                      'Message Sent',
-                      'Thank you, ${nameController.text}!\n\nYour message has been successfully received. Our team will review your inquiry and get back to you at ${emailController.text} within 24-48 business hours.\n\nSummary of your message:\n${messageController.text}',
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) => const Center(
+                        child: CircularProgressIndicator(color: Color(0xFF0288D1)),
+                      ),
                     );
-                    nameController.clear();
-                    emailController.clear();
-                    messageController.clear();
+
+                    ApiService.submitContactUsMessage(
+                      name: nameController.text,
+                      email: emailController.text,
+                      subject: subjectController.text,
+                      message: messageController.text,
+                    ).then((result) {
+                      Navigator.pop(context); // Close loader
+
+                      if (result['success'] == true) {
+                        GeminiInfoDialog.show(
+                          context,
+                          'Message Sent',
+                          'Thank you, ${nameController.text}!\n\nYour message has been successfully received. Our team will review your inquiry and get back to you at ${emailController.text} within 24-48 business hours.',
+                        );
+                        nameController.clear();
+                        emailController.clear();
+                        subjectController.clear();
+                        messageController.clear();
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Failed to submit message. Please try again later.'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    });
                   }
                 },
                 style: ElevatedButton.styleFrom(
