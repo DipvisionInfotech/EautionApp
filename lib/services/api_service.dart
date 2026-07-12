@@ -380,5 +380,32 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+
+  /// Requests a WebSocket token for admin or test_bidder using their
+  /// standard JWT bearer token. Bypasses the ephemeral credential flow.
+  static Future<Map<String, dynamic>> getWebSocketToken(String roomId) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'Not logged in'};
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/bidding/rooms/$roomId/ws-token/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'token': data['token']};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Network error: $e'};
+    }
+  }
 }
+
 

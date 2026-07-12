@@ -21,7 +21,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   WebSocketChannel? _channel;
   bool _isLoading = false;
   bool _isAuthenticated = false;
+  bool _isSpectator = false;      // True for admin role → read-only mode
   String? _errorMessage;
+  String? _userRole;              // Cached role for this session
 
   // Auction State
   double _currentBid = 0.0;
@@ -41,8 +43,59 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   @override
   void initState() {
     super.initState();
-    // Do not auto-connect, wait for user to authenticate using temp credentials
-    _isLoading = false;
+    _checkRoleAndAutoConnect();
+  }
+
+  /// Check if the currently logged-in user is admin or test_bidder.
+  /// If so, bypass the credentials screen and auto-connect as a spectator (admin)
+  /// or as a full participant (test_bidder).
+  Future<void> _checkRoleAndAutoConnect() async {
+    setState(() => _isLoading = true);
+
+    final profileResult = await ApiService.getProfile();
+
+    if (!mounted) return;
+
+    if (profileResult['success'] == true) {
+      final role = profileResult['data']?['role'] as String?;
+      _userRole = role;
+
+      if (role == 'admin' || role == 'test_bidder') {
+        // Auto-connect using standard JWT → ws-token endpoint
+        await _connectAsPrivilegedUser();
+        return;
+      }
+    }
+
+    // Regular bidder — show the credentials form
+    setState(() => _isLoading = false);
+  }
+
+  /// Fetch a WebSocket token via the standard JWT bearer token route
+  /// (allowed for admin and test_bidder roles).
+  Future<void> _connectAsPrivilegedUser() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final result = await ApiService.getWebSocketToken(widget.roomId);
+
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      setState(() => _isAuthenticated = true);
+      // is_spectator flag will be set when the backend sends room_state
+      await _connectWebSocketWithToken(result['token']);
+    } else {
+      final errMsg = result['error'] is Map
+          ? (result['error']['error'] ?? 'Failed to join room')
+          : result['error'].toString();
+      setState(() {
+        _errorMessage = errMsg;
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _connectWebSocketWithToken(String token) async {
@@ -73,7 +126,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         },
         onError: (error) {
           if (!hasReceivedData && mounted) {
-            // If the subprotocol handshake fails (e.g. on Chrome), fallback to query string
             _connectWebSocketLegacyFallback(baseWs, token);
           } else if (mounted) {
             setState(() {
@@ -83,7 +135,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         },
         onDone: () {
           if (!hasReceivedData && mounted) {
-            // Handshake failed or connection closed without receiving data, fallback
             _connectWebSocketLegacyFallback(baseWs, token);
           } else if (mounted && !_auctionEnded) {
             setState(() {
@@ -197,6 +248,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         _currentBid = (data['current_bid'] as num).toDouble();
         _bidderCount = data['bidder_count'] as int;
         _timeRemainingSec = data['time_remaining_sec'] as int;
+        // Backend tells us if this connection is spectator-only
+        if (data['is_spectator'] == true) {
+          _isSpectator = true;
+        }
       } 
       else if (type == 'new_bid') {
         _currentBid = (data['amount'] as num).toDouble();
@@ -228,6 +283,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   }
 
   void _placeBid() {
+    // Extra safety guard: admins should never get here, but just in case
+    if (_isSpectator) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('You are in spectator/admin mode. Bids are not allowed.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     if (_bidController.text.isEmpty) return;
     
     final amount = double.tryParse(_bidController.text);
@@ -293,9 +359,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Show a full-screen loader while checking role (brief, only on first load)
+    if (_isLoading && !_isAuthenticated) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          title: Text(widget.roomTitle),
+          elevation: 0,
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
     if (!_isAuthenticated) {
       return _buildLoginScreen();
     }
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -303,6 +384,35 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
+        // Show spectator badge in title area
+        actions: _isSpectator
+            ? [
+                Container(
+                  margin: const EdgeInsets.only(right: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F5E9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF4CAF50)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.visibility, size: 14, color: Color(0xFF2E7D32)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Spectator',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF2E7D32),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ]
+            : null,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -327,6 +437,34 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 )
               : Column(
                   children: [
+                    // ── Admin Spectator Mode Banner ─────────────────────────
+                    if (_isSpectator)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFF1B5E20), Color(0xFF388E3C)],
+                          ),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.admin_panel_settings, color: Colors.white, size: 18),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '👁️  Admin Spectator Mode — You are watching this auction live. Bidding is disabled.',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
                     // Status Header
                     Container(
                       color: Colors.white,
@@ -382,74 +520,140 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
                     // Bid History
                     Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _bidHistory.length,
-                        itemBuilder: (context, index) {
-                          final bid = _bidHistory[index];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: const CircleAvatar(
-                                backgroundColor: Color(0xFFE1F5FE),
-                                child: Icon(Icons.person, color: Color(0xFF0288D1)),
+                      child: _bidHistory.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.hourglass_empty, size: 48, color: Colors.grey[400]),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'No bids placed yet.\nWaiting for participants...',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(color: Colors.grey[500], height: 1.6),
+                                  ),
+                                ],
                               ),
-                              title: Text(bid['alias'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: Text('${bid['time'].hour}:${bid['time'].minute.toString().padLeft(2, '0')}'),
-                              trailing: Text(
-                                '₹${bid['amount'].toStringAsFixed(0)}',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
-                              ),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _bidHistory.length,
+                              itemBuilder: (context, index) {
+                                final bid = _bidHistory[index];
+                                final isTestBid = (bid['alias'] as String).startsWith('TEST-');
+                                final isAdminBid = bid['alias'] == 'Admin';
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: isAdminBid
+                                          ? const Color(0xFFE8F5E9)
+                                          : isTestBid
+                                              ? const Color(0xFFFFF8E1)
+                                              : const Color(0xFFE1F5FE),
+                                      child: Icon(
+                                        isAdminBid ? Icons.admin_panel_settings : Icons.person,
+                                        color: isAdminBid
+                                            ? const Color(0xFF2E7D32)
+                                            : isTestBid
+                                                ? const Color(0xFFF57F17)
+                                                : const Color(0xFF0288D1),
+                                      ),
+                                    ),
+                                    title: Row(
+                                      children: [
+                                        Text(bid['alias'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                                        if (isTestBid) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFFFF8E1),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: const Color(0xFFF57F17)),
+                                            ),
+                                            child: const Text('TEST', style: TextStyle(fontSize: 9, color: Color(0xFFF57F17), fontWeight: FontWeight.bold)),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    subtitle: Text('${bid['time'].hour}:${bid['time'].minute.toString().padLeft(2, '0')}'),
+                                    trailing: Text(
+                                      '₹${bid['amount'].toStringAsFixed(0)}',
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
-                          );
-                        },
-                      ),
                     ),
 
-                    // Bidding Controls
+                    // ── Bidding Controls OR Spectator Info ─────────────────
                     if (!_auctionEnded)
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _bidController,
-                                keyboardType: TextInputType.number,
-                                decoration: InputDecoration(
-                                  hintText: 'Enter your bid...',
-                                  prefixIcon: const Icon(Icons.currency_rupee),
-                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                                ),
+                      _isSpectator
+                          // Spectator footer — no input
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.visibility, color: Colors.grey[500], size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Spectating as Admin — Bidding Disabled',
+                                    style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
+                                  ),
+                                ],
+                              ),
+                            )
+                          // Normal bidder footer
+                          : Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _bidController,
+                                      keyboardType: TextInputType.number,
+                                      decoration: InputDecoration(
+                                        hintText: 'Enter your bid...',
+                                        prefixIcon: const Icon(Icons.currency_rupee),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  ElevatedButton(
+                                    onPressed: _placeBid,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0288D1),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                    ),
+                                    child: const Text('Place Bid', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            ElevatedButton(
-                              onPressed: _placeBid,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0288D1),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                              ),
-                              child: const Text('Place Bid', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
     );
   }
 
   Widget _buildLoginScreen() {
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -554,4 +758,3 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     );
   }
 }
-
