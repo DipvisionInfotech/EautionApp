@@ -33,13 +33,13 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
-  final _passwordController = TextEditingController();
 
   bool _isSending = false;
   bool _isLoggedIn = false;
   String _loggedInName = '';
   String _loggedInEmail = '';
   String _loggedInPhone = '';
+  String _requestType = 'bidding'; // 'bidding' or 'query'
 
   @override
   void initState() {
@@ -64,6 +64,13 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           _mobileController.text = _loggedInPhone;
         });
       }
+    } else {
+      if (mounted) {
+        setState(() {
+          _isLoggedIn = false;
+          _requestType = 'query'; // Guests can only send queries
+        });
+      }
     }
   }
 
@@ -73,7 +80,6 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
     _mobileController.dispose();
     _emailController.dispose();
     _messageController.dispose();
-    _passwordController.dispose();
     super.dispose();
   }
 
@@ -86,54 +92,50 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
         String email = _emailController.text;
         String phone = _mobileController.text;
 
-        // If not logged in, register first!
-        if (!_isLoggedIn) {
-          final regResult = await ApiService.register(
-            email,
-            _passwordController.text,
-            name,
-            'buyer',
-          );
-          if (!regResult['success']) {
+        bool success = false;
+        String successMessage = '';
+
+        if (_isLoggedIn && _requestType == 'bidding') {
+          if (widget.auctionId == null || widget.auctionId!.isEmpty) {
             setState(() => _isSending = false);
-            String errorMsg = 'Failed to create account.';
-            if (regResult['error'] != null && regResult['error']['error'] != null) {
-              errorMsg = regResult['error']['error'].toString();
-            } else if (regResult['error'] != null && regResult['error']['email'] != null) {
-              errorMsg = 'Email already registered or invalid.';
-            }
-            if (mounted) {
-              GeminiInfoDialog.show(context, 'Registration Failed', errorMsg);
-            }
+            GeminiInfoDialog.show(context, 'Error', 'Auction ID is missing.');
             return;
           }
+          final result = await ApiService.registerInterest(
+            widget.auctionId!,
+            message: _messageController.text,
+            contactPreference: 'either',
+          );
+          success = result['success'] == true;
+          successMessage = 'Your request to participate in bidding has been submitted for approval!';
+        } else {
+          // General Query (Guest or Logged-In)
+          final result = await ApiService.submitEnquiry(
+            name: name,
+            email: email,
+            phone: phone,
+            message: _messageController.text,
+            auctionId: widget.auctionId,
+          );
+          success = result['success'] == true;
+          successMessage = 'Thank you for your interest! Your query has been submitted successfully.';
         }
-
-        final result = await ApiService.submitEnquiry(
-          name: name,
-          email: email,
-          phone: phone,
-          message: _messageController.text,
-          auctionId: widget.auctionId,
-        );
 
         if (!mounted) return;
         setState(() => _isSending = false);
 
-        if (result['success']) {
+        if (success) {
           Navigator.pop(context);
           GeminiInfoDialog.show(
             context,
-            'Enquiry Submitted',
-            _isLoggedIn
-                ? 'Thank you for your interest in "${widget.auctionTitle}". Our team has been notified and will contact you shortly.'
-                : 'Thank you for your interest! Your bidder account has been created and your enquiry for "${widget.auctionTitle}" has been submitted.',
+            _requestType == 'bidding' ? 'Bidding Request Sent' : 'Enquiry Submitted',
+            successMessage,
           );
         } else {
           GeminiInfoDialog.show(
             context,
             'Submission Failed',
-            'Could not submit your enquiry. Please check your details and try again.',
+            'Could not process your request. Please ensure you have completed your profile / KYC and try again.',
           );
         }
       } catch (e) {
@@ -171,9 +173,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Enquiry Form',
-                    style: TextStyle(
+                  Text(
+                    _isLoggedIn && _requestType == 'bidding' ? 'Bidding Request' : 'Enquiry Form',
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -207,7 +209,81 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
                       ),
                       const SizedBox(height: 20),
-                      if (!_isLoggedIn) ...[
+                      if (_isLoggedIn) ...[
+                        // Choice Selector for Logged-In Users
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _requestType = 'bidding'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: _requestType == 'bidding' ? const Color(0xFF00AEEF) : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      'Bidding Request',
+                                      style: TextStyle(
+                                        color: _requestType == 'bidding' ? Colors.white : Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                child: InkWell(
+                                  onTap: () => setState(() => _requestType = 'query'),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    decoration: BoxDecoration(
+                                      color: _requestType == 'query' ? const Color(0xFF00AEEF) : Colors.transparent,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      'General Query',
+                                      style: TextStyle(
+                                        color: _requestType == 'query' ? Colors.white : Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Logged-In User Profile Banner
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 20),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.account_circle, color: Color(0xFF00AEEF)),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Logged in as: $_loggedInName ($_loggedInEmail)',
+                                style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else ...[
+                        // Guest Form Fields
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -254,36 +330,6 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                           validator: (v) => v == null || !v.contains('@') ? 'Invalid email' : null,
                         ),
                         const SizedBox(height: 15),
-                        const Text('Password (To create your Bidder account)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _passwordController,
-                          enabled: !_isSending,
-                          obscureText: true,
-                          decoration: _inputDecoration('Enter password'),
-                          validator: (v) => v == null || v.length < 6 ? 'Password must be at least 6 characters' : null,
-                        ),
-                        const SizedBox(height: 15),
-                      ] else ...[
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          margin: const EdgeInsets.only(bottom: 15),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.account_circle, color: Color(0xFF00AEEF)),
-                              const SizedBox(width: 10),
-                              Text(
-                                'Logged in as: $_loggedInName ($_loggedInEmail)',
-                                style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                       const Text('Your Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 8),
@@ -301,14 +347,16 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(color: const Color(0xFFBAE6FD)),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.info_outline, size: 16, color: Color(0xFF0288D1)),
-                            SizedBox(width: 8),
+                            const Icon(Icons.info_outline, size: 16, color: Color(0xFF0288D1)),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Our team will review your enquiry and contact you within 24 hours.',
-                                style: TextStyle(fontSize: 12, color: Color(0xFF0369A1)),
+                                _requestType == 'bidding'
+                                    ? 'Submitting this will notify the administrator to review and approve your participation.'
+                                    : 'Our team will review your enquiry and contact you within 24 hours.',
+                                style: const TextStyle(fontSize: 12, color: Color(0xFF0369A1)),
                               ),
                             ),
                           ],
@@ -340,7 +388,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                     ),
                     child: _isSending 
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text('Send Query'),
+                      : Text(_requestType == 'bidding' ? 'Submit Bidding Request' : 'Send Query'),
                   ),
                 ],
               ),

@@ -150,6 +150,33 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> registerInterest(String roomId, {String? message, String? contactPreference}) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'Not logged in'};
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/rooms/$roomId/register-interest/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        if (message != null) 'message': message,
+        'contact_preference': contactPreference ?? 'email',
+      }),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      return {'success': true};
+    } else {
+      try {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      } catch (_) {
+        return {'success': false, 'error': 'Failed to register interest'};
+      }
+    }
+  }
+
   // Categories
   static Future<List<dynamic>> getCategories() async {
     try {
