@@ -4,13 +4,22 @@ import '../services/api_service.dart';
 
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
+  final String? auctionId;  // Can be auction room ID or classified item ID
 
-  const EnquiryDialog({super.key, required this.auctionTitle});
+  const EnquiryDialog({
+    super.key, 
+    required this.auctionTitle,
+    this.auctionId,
+  });
 
-  static void show(BuildContext context, String auctionTitle) {
+  static void show(BuildContext context, String auctionTitle, {String? auctionId}) {
+    print('DEBUG: Opening EnquiryDialog with title: $auctionTitle, auctionId: $auctionId');
     showDialog(
       context: context,
-      builder: (context) => EnquiryDialog(auctionTitle: auctionTitle),
+      builder: (context) => EnquiryDialog(
+        auctionTitle: auctionTitle,
+        auctionId: auctionId,
+      ),
     );
   }
 
@@ -24,13 +33,38 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
+  final _passwordController = TextEditingController();
 
   bool _isSending = false;
+  bool _isLoggedIn = false;
+  String _loggedInName = '';
+  String _loggedInEmail = '';
+  String _loggedInPhone = '';
 
   @override
   void initState() {
     super.initState();
     _messageController.text = "Yes, I am interested in this item. Kindly contact me through email or mobile.\n\nThanks";
+    _checkLoginStatus();
+  }
+
+  Future<void> _checkLoginStatus() async {
+    final token = await ApiService.getAccessToken();
+    if (token != null) {
+      final profile = await ApiService.getProfile();
+      if (profile['success'] == true && mounted) {
+        setState(() {
+          _isLoggedIn = true;
+          _loggedInName = profile['data']['full_name'] ?? '';
+          _loggedInEmail = profile['data']['email'] ?? '';
+          _loggedInPhone = profile['data']['phone'] ?? '';
+          
+          _nameController.text = _loggedInName;
+          _emailController.text = _loggedInEmail;
+          _mobileController.text = _loggedInPhone;
+        });
+      }
+    }
   }
 
   @override
@@ -39,6 +73,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
     _mobileController.dispose();
     _emailController.dispose();
     _messageController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -47,11 +82,39 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
       setState(() => _isSending = true);
 
       try {
+        String name = _nameController.text;
+        String email = _emailController.text;
+        String phone = _mobileController.text;
+
+        // If not logged in, register first!
+        if (!_isLoggedIn) {
+          final regResult = await ApiService.register(
+            email,
+            _passwordController.text,
+            name,
+            'buyer',
+          );
+          if (!regResult['success']) {
+            setState(() => _isSending = false);
+            String errorMsg = 'Failed to create account.';
+            if (regResult['error'] != null && regResult['error']['error'] != null) {
+              errorMsg = regResult['error']['error'].toString();
+            } else if (regResult['error'] != null && regResult['error']['email'] != null) {
+              errorMsg = 'Email already registered or invalid.';
+            }
+            if (mounted) {
+              GeminiInfoDialog.show(context, 'Registration Failed', errorMsg);
+            }
+            return;
+          }
+        }
+
         final result = await ApiService.submitEnquiry(
-          name: _nameController.text,
-          email: _emailController.text,
-          phone: _mobileController.text,
+          name: name,
+          email: email,
+          phone: phone,
           message: _messageController.text,
+          auctionId: widget.auctionId,
         );
 
         if (!mounted) return;
@@ -62,7 +125,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           GeminiInfoDialog.show(
             context,
             'Enquiry Submitted',
-            'Thank you for your interest in "${widget.auctionTitle}". Our team has been notified and will contact you shortly at ${_emailController.text} or ${_mobileController.text}.',
+            _isLoggedIn
+                ? 'Thank you for your interest in "${widget.auctionTitle}". Our team has been notified and will contact you shortly.'
+                : 'Thank you for your interest! Your bidder account has been created and your enquiry for "${widget.auctionTitle}" has been submitted.',
           );
         } else {
           GeminiInfoDialog.show(
@@ -142,52 +207,84 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
                       ),
                       const SizedBox(height: 20),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Your Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  controller: _nameController,
-                                  enabled: !_isSending,
-                                  decoration: _inputDecoration('Enter your name'),
-                                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                                ),
-                              ],
+                      if (!_isLoggedIn) ...[
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Your Name', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    controller: _nameController,
+                                    enabled: !_isSending,
+                                    decoration: _inputDecoration('Enter your name'),
+                                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Your Mobile Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                const SizedBox(height: 8),
-                                TextFormField(
-                                  controller: _mobileController,
-                                  enabled: !_isSending,
-                                  decoration: _inputDecoration('Enter your mobile number'),
-                                  validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                                ),
-                              ],
+                            const SizedBox(width: 20),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Your Mobile Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    controller: _mobileController,
+                                    enabled: !_isSending,
+                                    decoration: _inputDecoration('Enter your mobile number'),
+                                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                                  ),
+                                ],
+                              ),
                             ),
+                          ],
+                        ),
+                        const SizedBox(height: 15),
+                        const Text('Your Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _emailController,
+                          enabled: !_isSending,
+                          decoration: _inputDecoration('Enter your email'),
+                          validator: (v) => v == null || !v.contains('@') ? 'Invalid email' : null,
+                        ),
+                        const SizedBox(height: 15),
+                        const Text('Password (To create your Bidder account)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                        const SizedBox(height: 8),
+                        TextFormField(
+                          controller: _passwordController,
+                          enabled: !_isSending,
+                          obscureText: true,
+                          decoration: _inputDecoration('Enter password'),
+                          validator: (v) => v == null || v.length < 6 ? 'Password must be at least 6 characters' : null,
+                        ),
+                        const SizedBox(height: 15),
+                      ] else ...[
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 15),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade200),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 15),
-                      const Text('Your Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        controller: _emailController,
-                        enabled: !_isSending,
-                        decoration: _inputDecoration('Enter your email'),
-                        validator: (v) => v == null || !v.contains('@') ? 'Invalid email' : null,
-                      ),
-                      const SizedBox(height: 15),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.account_circle, color: Color(0xFF00AEEF)),
+                              const SizedBox(width: 10),
+                              Text(
+                                'Logged in as: $_loggedInName ($_loggedInEmail)',
+                                style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const Text('Your Message', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                       const SizedBox(height: 8),
                       TextFormField(

@@ -3,12 +3,12 @@ import 'gemini_info_dialog.dart';
 import '../services/api_service.dart';
 
 class LoginDialog {
-  static void show(BuildContext context) {
+  static Future<bool> show(BuildContext context) async {
     final formKey = GlobalKey<FormState>();
     final emailController = TextEditingController();
     final passwordController = TextEditingController();
 
-    showDialog(
+    final success = await showDialog<bool>(
       context: context,
       builder: (context) => Dialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -38,7 +38,7 @@ class LoginDialog {
                         style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
                       ),
                       InkWell(
-                        onTap: () => Navigator.pop(context),
+                        onTap: () => Navigator.pop(context, false),
                         child: Container(
                           padding: const EdgeInsets.all(2),
                           decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.rectangle),
@@ -82,7 +82,7 @@ class LoginDialog {
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           TextButton(
-                            onPressed: () => Navigator.pop(context),
+                            onPressed: () => Navigator.pop(context, false),
                             child: const Text('Cancel'),
                           ),
                           const SizedBox(width: 15),
@@ -103,7 +103,7 @@ class LoginDialog {
                                       setState(() => isLoggingIn = false);
                                       
                                       if (result['success']) {
-                                        if (context.mounted) Navigator.pop(context); // close login dialog
+                                        if (context.mounted) Navigator.pop(context, true); // close login dialog with true
                                         if (context.mounted) {
                                           GeminiInfoDialog.show(
                                             context,
@@ -155,6 +155,7 @@ class LoginDialog {
         ),
       ),
     );
+    return success ?? false;
   }
 
   static Widget _dialogTextField(String hint, {bool isPassword = false, TextEditingController? controller, String? Function(String?)? validator}) {

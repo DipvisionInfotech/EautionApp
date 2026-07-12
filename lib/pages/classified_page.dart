@@ -289,6 +289,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
   }
 
   Widget _buildClassifiedCard(Map<String, dynamic> item, double screenWidth) {
+    final itemId = item['id']?.toString() ?? '';  // Extract the classified item ID
     final imageUrl = (item['images'] as List?)?.isNotEmpty == true
         ? item['images'][0].toString()
         : null;
@@ -380,7 +381,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => EnquiryDialog.show(context, title),
+                        onPressed: () => EnquiryDialog.show(context, title, auctionId: itemId),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,

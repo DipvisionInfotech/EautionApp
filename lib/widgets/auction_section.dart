@@ -385,7 +385,7 @@ class _AuctionCardState extends State<AuctionCard> {
                           _actionButton(
                             context, 'View Details',
                             const Color(0xFF03A9F4),
-                            () => EnquiryDialog.show(context, widget.title),
+                            () => AuctionDetailDialog.show(context, widget.roomId),
                             isExtraSmall,
                           ),
                           const SizedBox(width: 6),
@@ -405,7 +405,7 @@ class _AuctionCardState extends State<AuctionCard> {
                                   ),
                                 );
                               } else {
-                                EnquiryDialog.show(context, widget.title);
+                                EnquiryDialog.show(context, widget.title, auctionId: widget.roomId);
                               }
                             },
                             isExtraSmall,
@@ -477,6 +477,135 @@ class _AuctionCardState extends State<AuctionCard> {
         child: Text(label,
             style: TextStyle(
                 color: Colors.white, fontSize: isExtraSmall ? 10 : 12, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+}
+
+class AuctionDetailDialog {
+  static void show(BuildContext context, String roomId) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return FutureBuilder<Map<String, dynamic>>(
+          future: ApiService.getRoomDetails(roomId),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Dialog(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                child: Center(
+                  child: CircularProgressIndicator(color: Color(0xFF03A9F4)),
+                ),
+              );
+            }
+            if (snapshot.hasError || snapshot.data?['success'] != true) {
+              return AlertDialog(
+                title: const Text('Error'),
+                content: const Text('Failed to load auction details.'),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+                ],
+              );
+            }
+
+            final room = snapshot.data!['data'];
+            final item = room['item'] as Map<String, dynamic>?;
+            final description = room['description']?.toString() ?? item?['description']?.toString() ?? 'No description available.';
+            final start = room['scheduled_start'] != null ? DateTime.parse(room['scheduled_start'].toString()).toLocal() : null;
+            final end = room['scheduled_end'] != null ? DateTime.parse(room['scheduled_end'].toString()).toLocal() : null;
+            final minBid = item?['min_bid'] ?? 0;
+            final minRaise = item?['min_raise'] ?? 0;
+
+            final df = DateFormat('dd MMM yyyy hh:mm a');
+
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Container(
+                width: 500,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            room['title'] ?? 'Auction Details',
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    const SizedBox(height: 10),
+                    Text(
+                      description,
+                      style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.5),
+                    ),
+                    const SizedBox(height: 20),
+                    _detailRow('Status', room['status']?.toString().toUpperCase() ?? 'UPCOMING'),
+                    _detailRow('Scheduled Start', start != null ? df.format(start) : 'TBD'),
+                    _detailRow('Scheduled End', end != null ? df.format(end) : 'TBD'),
+                    _detailRow('Minimum Bid / Base Price', '₹$minBid'),
+                    _detailRow('Minimum Raise Increment', '₹$minRaise'),
+                    _detailRow('Location', item?['location'] ?? 'Not Specified'),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF03A9F4),
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          child: const Text('Close'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  static Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 180,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
       ),
     );
   }

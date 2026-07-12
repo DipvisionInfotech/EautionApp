@@ -146,6 +146,7 @@ class _ClassifiedSectionState extends State<ClassifiedSection> {
   }
 
   Widget _classifiedCard(BuildContext context, Map<String, dynamic> item) {
+    final itemId = item['id']?.toString() ?? '';  // Extract the classified item ID
     final title = item['title']?.toString() ?? 'Untitled';
     final qty = item['quantity']?.toString() ?? '';
     final priceDisplay = item['price_display']?.toString().isNotEmpty == true
@@ -256,7 +257,7 @@ class _ClassifiedSectionState extends State<ClassifiedSection> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => EnquiryDialog.show(context, title),
+                        onPressed: () => EnquiryDialog.show(context, title, auctionId: itemId),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,

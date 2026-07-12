@@ -227,17 +227,33 @@ class ApiService {
     required String email,
     required String phone,
     required String message,
+    String? auctionId,  // Optional auction ID
   }) async {
+    final body = {
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'message': message,
+    };
+    
+    // Add auction_id if provided
+    if (auctionId != null && auctionId.isNotEmpty) {
+      body['auction_id'] = auctionId;
+      print('DEBUG: Adding auction_id to request: $auctionId');
+    } else {
+      print('DEBUG: No auction_id provided');
+    }
+    
+    print('DEBUG: Request body: ${jsonEncode(body)}');
+    
     final response = await http.post(
       Uri.parse('$baseUrl/enquiry/'),
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'name': name,
-        'email': email,
-        'phone': phone,
-        'message': message,
-      }),
+      body: jsonEncode(body),
     );
+
+    print('DEBUG: Response status: ${response.statusCode}');
+    print('DEBUG: Response body: ${response.body}');
 
     if (response.statusCode == 201) {
       return {'success': true};
