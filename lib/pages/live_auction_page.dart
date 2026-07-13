@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -24,6 +25,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   bool _isSpectator = false;      // True for admin role → read-only mode
   String? _errorMessage;
   String? _userRole;              // Cached role for this session
+  Timer? _countdownTimer;
+  Map<String, dynamic>? _roomDetails;
 
   // Auction State
   double _currentBid = 0.0;
@@ -43,7 +46,30 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   @override
   void initState() {
     super.initState();
+    _fetchRoomDetails();
     _checkRoleAndAutoConnect();
+  }
+
+  Future<void> _fetchRoomDetails() async {
+    final result = await ApiService.getRoomDetails(widget.roomId);
+    if (result['success'] == true && mounted) {
+      setState(() {
+        _roomDetails = result['data'];
+      });
+    }
+  }
+
+  void _startCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (mounted) {
+        if (_timeRemainingSec > 0 && !_auctionEnded) {
+          setState(() {
+            _timeRemainingSec--;
+          });
+        }
+      }
+    });
   }
 
   /// Check if the currently logged-in user is admin or test_bidder.
@@ -272,6 +298,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         if (data['is_spectator'] == true) {
           _isSpectator = true;
         }
+        if (data['bids'] != null) {
+          _bidHistory.clear();
+          for (var bidData in data['bids']) {
+            _bidHistory.add({
+              'alias': bidData['bidder_alias'],
+              'amount': (bidData['amount'] as num).toDouble(),
+              'time': DateTime.parse(bidData['timestamp']).toLocal(),
+            });
+          }
+        }
+        _startCountdownTimer();
       } 
       else if (type == 'new_bid') {
         _currentBid = (data['amount'] as num).toDouble();
@@ -364,6 +401,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _channel?.sink.close();
     _bidController.dispose();
     _tempEmailController.dispose();
@@ -479,6 +517,121 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.w500,
                                 ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Item Details Card (Image, Name, Min Bid, Min Increment)
+                    if (_roomDetails != null)
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Item Image (using actual uploaded image from MinIO)
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                width: 80,
+                                height: 80,
+                                color: Colors.grey[100],
+                                child: (_roomDetails!['item']?['images'] != null &&
+                                        (_roomDetails!['item']['images'] as List).isNotEmpty)
+                                    ? Image.network(
+                                        _roomDetails!['item']['images'][0],
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (context, error, stackTrace) =>
+                                            const Icon(Icons.image, size: 40, color: Colors.grey),
+                                      )
+                                    : const Icon(Icons.image, size: 40, color: Colors.grey),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            // Item Details
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _roomDetails!['item']?['name'] ?? widget.roomTitle,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'STARTING BID',
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: Colors.grey,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              '₹${(_roomDetails!['item']?['min_bid'] ?? 0.0).toStringAsFixed(0)}',
+                                              style: const TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (_roomDetails!['item']?['min_raise'] != null &&
+                                          (_roomDetails!['item']['min_raise'] as num) > 0)
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'MIN INCREMENT',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  color: Colors.grey,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                '₹${(_roomDetails!['item']['min_raise'] as num).toStringAsFixed(0)}',
+                                                style: const TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.blueAccent,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                           ],
