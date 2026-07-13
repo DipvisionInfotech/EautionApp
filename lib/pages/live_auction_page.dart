@@ -227,6 +227,26 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       });
       _connectWebSocketWithToken(result['token']);
     } else {
+      // If ephemeral login fails, let's try standard login (for admin & test_bidder roles)
+      final standardResult = await ApiService.login(email, password);
+      if (standardResult['success'] == true) {
+        final profileResult = await ApiService.getProfile();
+        if (profileResult['success'] == true) {
+          final role = profileResult['data']?['role'] as String?;
+          if (role == 'admin' || role == 'test_bidder') {
+            _userRole = role;
+            final tokenResult = await ApiService.getWebSocketToken(widget.roomId);
+            if (tokenResult['success'] == true) {
+              setState(() {
+                _isAuthenticated = true;
+              });
+              _connectWebSocketWithToken(tokenResult['token']);
+              return;
+            }
+          }
+        }
+      }
+
       setState(() {
         _isLoading = false;
       });
