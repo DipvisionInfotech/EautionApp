@@ -86,7 +86,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       final role = profileResult['data']?['role'] as String?;
       _userRole = role;
 
-      if (role == 'admin' || role == 'test_bidder') {
+      if (role == 'admin' || role == 'seller' || role == 'test_bidder') {
         // Auto-connect using standard JWT → ws-token endpoint
         await _connectAsPrivilegedUser();
         return;
@@ -259,7 +259,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         final profileResult = await ApiService.getProfile();
         if (profileResult['success'] == true) {
           final role = profileResult['data']?['role'] as String?;
-          if (role == 'admin' || role == 'test_bidder') {
+          if (role == 'admin' || role == 'seller' || role == 'test_bidder') {
             _userRole = role;
             final tokenResult = await ApiService.getWebSocketToken(widget.roomId);
             if (tokenResult['success'] == true) {

@@ -6,6 +6,8 @@ import 'pages/classified_page.dart';
 import 'pages/contact_us_page.dart';
 import 'pages/register_page.dart';
 import 'pages/past_auctions_page.dart';
+import 'pages/seller_auctions_page.dart';
+import 'pages/seller_enquiries_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,6 +35,8 @@ class MyApp extends StatelessWidget {
         '/contact-us': (context) => const ContactUsPage(),
         '/register': (context) => const RegisterPage(),
         '/past-auctions': (context) => const PastAuctionsPage(),
+        '/seller-auctions': (context) => const SellerAuctionsPage(),
+        '/seller-enquiries': (context) => const SellerEnquiriesPage(),
       },
     );
   }

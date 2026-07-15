@@ -81,43 +81,70 @@ class _CustomDrawerState extends State<CustomDrawer> {
               }
             },
           ),
-          _drawerItem(
-            context,
-            Icons.gavel,
-            'Auction',
-            widget.activePage == 'Auction',
-            () {
-              Navigator.pop(context);
-              if (widget.activePage != 'Auction') {
-                Navigator.pushNamed(context, '/auction');
-              }
-            },
-          ),
-          if (isBidder)
+          if (_isLoggedIn && _userProfile != null && _userProfile!['role'] == 'seller') ...[
             _drawerItem(
               context,
-              Icons.history,
-              'Past Auctions',
-              widget.activePage == 'Past Auctions',
+              Icons.gavel,
+              'My Auctions',
+              widget.activePage == 'My Auctions',
               () {
                 Navigator.pop(context);
-                if (widget.activePage != 'Past Auctions') {
-                  Navigator.pushNamed(context, '/past-auctions');
+                if (widget.activePage != 'My Auctions') {
+                  Navigator.pushNamed(context, '/seller-auctions');
                 }
               },
             ),
-          _drawerItem(
-            context,
-            Icons.list_alt,
-            'Classified',
-            widget.activePage == 'Classified',
-            () {
-              Navigator.pop(context);
-              if (widget.activePage != 'Classified') {
-                Navigator.pushNamed(context, '/classified');
-              }
-            },
-          ),
+            _drawerItem(
+              context,
+              Icons.message,
+              'My Enquiries',
+              widget.activePage == 'My Enquiries',
+              () {
+                Navigator.pop(context);
+                if (widget.activePage != 'My Enquiries') {
+                  Navigator.pushNamed(context, '/seller-enquiries');
+                }
+              },
+            ),
+          ] else ...[
+            _drawerItem(
+              context,
+              Icons.gavel,
+              'Auction',
+              widget.activePage == 'Auction',
+              () {
+                Navigator.pop(context);
+                if (widget.activePage != 'Auction') {
+                  Navigator.pushNamed(context, '/auction');
+                }
+              },
+            ),
+            if (isBidder)
+              _drawerItem(
+                context,
+                Icons.history,
+                'Past Auctions',
+                widget.activePage == 'Past Auctions',
+                () {
+                  Navigator.pop(context);
+                  if (widget.activePage != 'Past Auctions') {
+                    Navigator.pushNamed(context, '/past-auctions');
+                  }
+                },
+              ),
+            _drawerItem(
+              context,
+              Icons.list_alt,
+              'Classified',
+              widget.activePage == 'Classified',
+              () {
+                Navigator.pop(context);
+                if (widget.activePage != 'Classified') {
+                  Navigator.pushNamed(context, '/classified');
+                }
+              },
+            ),
+          ],
           _drawerItem(
             context,
             Icons.contact_support,

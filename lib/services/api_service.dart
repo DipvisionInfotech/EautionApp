@@ -433,6 +433,48 @@ class ApiService {
       return {'success': false, 'error': 'Network error'};
     }
   }
+
+  // Seller Enquiries
+  static Future<Map<String, dynamic>> submitSellerEnquiry({required String message}) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'Not logged in'};
+
+    final response = await http.post(
+      Uri.parse('$baseUrl/enquiry/my/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'message': message,
+      }),
+    );
+
+    if (response.statusCode == 201) {
+      return {'success': true, 'data': jsonDecode(response.body)};
+    } else {
+      return {'success': false, 'error': jsonDecode(response.body)};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getSellerEnquiries() async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'Not logged in'};
+
+    final response = await http.get(
+      Uri.parse('$baseUrl/enquiry/my/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      return {'success': true, 'data': jsonDecode(response.body)};
+    } else {
+      return {'success': false, 'error': jsonDecode(response.body)};
+    }
+  }
 }
 
 
