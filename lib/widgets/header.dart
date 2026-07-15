@@ -95,6 +95,7 @@ class _HeaderState extends State<Header> {
         return StatefulBuilder(
           builder: (context, setState) {
             final kycVerified = _userProfile!['kyc_verified'] == true;
+            final isAdmin = _userProfile!['role'] == 'admin';
 
             return AlertDialog(
               title: const Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
@@ -111,13 +112,15 @@ class _HeaderState extends State<Header> {
                     const Divider(),
                     _profileRow('Role', (_userProfile!['role'] ?? 'N/A').toString().toUpperCase()),
                     const Divider(),
-                    _profileRow(
-                      'KYC Status',
-                      kycVerified ? 'VERIFIED' : 'PENDING REVIEW / UNVERIFIED',
-                      color: kycVerified ? Colors.green : Colors.orange,
-                    ),
-                    const Divider(),
-                    if (!kycVerified) ...[
+                    if (!isAdmin) ...[
+                      _profileRow(
+                        'KYC Status',
+                        kycVerified ? 'VERIFIED' : 'PENDING REVIEW / UNVERIFIED',
+                        color: kycVerified ? Colors.green : Colors.orange,
+                      ),
+                      const Divider(),
+                    ],
+                    if (!kycVerified && !isAdmin) ...[
                       const SizedBox(height: 15),
                       const Text(
                         'Upload KYC Document',
@@ -162,6 +165,23 @@ class _HeaderState extends State<Header> {
                                 type: FileType.any,
                               );
                               if (result != null) {
+                                final file = result.files.single;
+                                const maxSizeBytes = 2 * 1024 * 1024;
+                                if (file.size > maxSizeBytes) {
+                                  setState(() {
+                                    uploadError = 'File size must be under 2MB.';
+                                  });
+                                  return;
+                                }
+                                final ext = file.name.split('.').last.toLowerCase();
+                                const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
+                                if (!allowedExts.contains(ext)) {
+                                  setState(() {
+                                    uploadError = 'Only PDF and Image files (.pdf, .jpg, .jpeg, .png) are allowed.';
+                                  });
+                                  return;
+                                }
+
                                 setState(() {
                                   isUploading = true;
                                   uploadError = null;

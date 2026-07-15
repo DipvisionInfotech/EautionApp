@@ -364,7 +364,27 @@ class _RegisterPageState extends State<RegisterPage> {
                           type: FileType.any,
                         );
                         if (result != null) {
-                          setState(() => _docFile = result.files.single);
+                          final file = result.files.single;
+                          const maxSizeBytes = 2 * 1024 * 1024;
+                          if (file.size > maxSizeBytes) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('File size must be under 2MB.')),
+                              );
+                            }
+                            return;
+                          }
+                          final ext = file.name.split('.').last.toLowerCase();
+                          const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
+                          if (!allowedExts.contains(ext)) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Only PDF and Image files (.pdf, .jpg, .jpeg, .png) are allowed.')),
+                              );
+                            }
+                            return;
+                          }
+                          setState(() => _docFile = file);
                         }
                       },
                       style: ElevatedButton.styleFrom(
