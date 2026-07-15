@@ -159,8 +159,7 @@ class _HeaderState extends State<Header> {
                           onPressed: () async {
                             try {
                               final result = await FilePicker.platform.pickFiles(
-                                type: FileType.custom,
-                                allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                                type: FileType.any,
                               );
                               if (result != null) {
                                 setState(() {

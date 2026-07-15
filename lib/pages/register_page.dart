@@ -361,8 +361,7 @@ class _RegisterPageState extends State<RegisterPage> {
                     ElevatedButton(
                       onPressed: () async {
                         final result = await FilePicker.platform.pickFiles(
-                          type: FileType.custom,
-                          allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                          type: FileType.any,
                         );
                         if (result != null) {
                           setState(() => _docFile = result.files.single);
