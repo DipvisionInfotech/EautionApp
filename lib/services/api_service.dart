@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // Set to true to force connection to the local development server in debug mode
-  static const bool useLocalHostInDebug = true;
+  // Set to false so debug mode also uses the live production backend
+  static const bool useLocalHostInDebug = false;
 
   // Dynamically switch between local dev and production server
   static const String baseUrl = (kDebugMode && useLocalHostInDebug)
@@ -88,6 +88,58 @@ class ApiService {
       return {'success': true, 'data': jsonDecode(response.body)};
     } else {
       return {'success': false, 'error': jsonDecode(response.body)};
+    }
+  }
+
+  static Future<Map<String, dynamic>> uploadKYCDocument(
+      String type, List<int> fileBytes, String fileName) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'No token'};
+
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/kyc/submit/'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.fields['type'] = type;
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileName,
+      ));
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 400) {
+        try {
+          final body = jsonDecode(response.body);
+          if (body is Map && body['error'] != null && body['error'].toString().contains('already exists')) {
+            request = http.MultipartRequest(
+              'PUT',
+              Uri.parse('$baseUrl/kyc/replace/$type/'),
+            );
+            request.headers['Authorization'] = 'Bearer $token';
+            request.fields['type'] = type;
+            request.files.add(http.MultipartFile.fromBytes(
+              'file',
+              fileBytes,
+              filename: fileName,
+            ));
+            streamedResponse = await request.send();
+            response = await http.Response.fromStream(streamedResponse);
+          }
+        } catch (_) {}
+      }
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(response.body)};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
   }
 

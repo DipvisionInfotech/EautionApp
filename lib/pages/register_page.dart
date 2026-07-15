@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io' as io;
 import '../widgets/header.dart';
 import '../widgets/footer.dart';
 import '../widgets/login_dialog.dart';
@@ -23,6 +26,8 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _agreeToTerms = false;
   bool _selectAllCategories = false;
   bool _isRegistering = false;
+  String _docType = 'aadhaar';
+  PlatformFile? _docFile;
   
   List<dynamic> _categories = [];
   String? _selectedCategorySlug;
@@ -84,21 +89,52 @@ class _RegisterPageState extends State<RegisterPage> {
           preferredCategories: preferredCats,
         );
 
-        if (!mounted) return;
-        setState(() => _isRegistering = false);
-
         if (result['success']) {
+          bool uploadSuccess = true;
+          String? uploadError;
+
+          if (_docFile != null) {
+            List<int> fileBytes;
+            if (kIsWeb) {
+              fileBytes = _docFile!.bytes!;
+            } else {
+              fileBytes = await io.File(_docFile!.path!).readAsBytes();
+            }
+
+            final uploadRes = await ApiService.uploadKYCDocument(
+              _docType,
+              fileBytes,
+              _docFile!.name,
+            );
+            if (uploadRes['success'] != true) {
+              uploadSuccess = false;
+              uploadError = uploadRes['error']?.toString();
+            }
+          }
+
+          if (!mounted) return;
+          setState(() => _isRegistering = false);
+
+          String infoMsg = 'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully and you are securely logged in.';
+          if (_docFile != null) {
+            if (uploadSuccess) {
+              infoMsg += '\n\nYour KYC document ($_docType) has been uploaded successfully for admin review.';
+            } else {
+              infoMsg += '\n\nWARNING: KYC document upload failed ($uploadError). You can re-upload it from your Profile page.';
+            }
+          } else {
+            infoMsg += '\n\nNext Steps:\n1. Open your Profile page to upload KYC documents for account verification.\n2. Explore active auctions.';
+          }
+
           GeminiInfoDialog.show(
             context,
             'Registration Successful',
-            'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully as a $_userType and you are securely logged in. You can now participate in auctions and manage your profile.\n\nNext Steps:\n1. Update your KYC details.\n2. Explore active auctions.',
+            infoMsg,
           );
-          // Optional: Navigate to dashboard after success
-          // Future.delayed(const Duration(seconds: 2), () {
-          //   Navigator.pushReplacementNamed(context, '/');
-          // });
         } else {
-          // Show error from Django
+          if (!mounted) return;
+          setState(() => _isRegistering = false);
+          
           String errorMsg = 'An error occurred. Please try again.';
           if (result['error'] != null) {
             if (result['error'] is Map) {
@@ -275,6 +311,75 @@ class _RegisterPageState extends State<RegisterPage> {
           ),
           const SizedBox(height: 10),
           _buildCategoryDropdown(),
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(15),
+            decoration: BoxDecoration(
+              color: Colors.grey.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(color: Colors.grey.withOpacity(0.2)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'KYC Verification Document (Optional)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A237E)),
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  value: _docType,
+                  decoration: InputDecoration(
+                    labelText: 'Document Type',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'aadhaar', child: Text('Aadhaar Card')),
+                    DropdownMenuItem(value: 'pan', child: Text('PAN Card')),
+                    DropdownMenuItem(value: 'passport', child: Text('Passport')),
+                    DropdownMenuItem(value: 'gst', child: Text('GST Registration')),
+                    DropdownMenuItem(value: 'other', child: Text('Other ID')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _docType = val);
+                    }
+                  },
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _docFile == null ? 'No file selected' : 'Selected: ${_docFile!.name}',
+                        style: TextStyle(color: _docFile == null ? Colors.grey : Colors.black87, fontSize: 13),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final result = await FilePicker.platform.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                        );
+                        if (result != null) {
+                          setState(() => _docFile = result.files.single);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF1A237E),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                      ),
+                      child: const Text('Choose File', style: TextStyle(fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
