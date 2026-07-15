@@ -3,6 +3,7 @@ import '../widgets/header.dart';
 import '../widgets/footer.dart';
 import '../widgets/enquiry_dialog.dart';
 import '../services/api_service.dart';
+import '../widgets/custom_drawer.dart';
 
 class ClassifiedPage extends StatefulWidget {
   const ClassifiedPage({super.key});
@@ -64,7 +65,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
 
     return Scaffold(
       backgroundColor: Colors.white,
-      drawer: isMobile ? _buildDrawer(context) : null,
+      drawer: isMobile ? const CustomDrawer(activePage: 'Classified') : null,
       body: SingleChildScrollView(
         child: Column(
           children: [
@@ -434,34 +435,5 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
     );
   }
 
-  Widget _buildDrawer(BuildContext context) {
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          const DrawerHeader(
-            decoration: BoxDecoration(color: Color(0xFF1A237E)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Seal The Deal', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
-                Text('Streamlining Salvage', style: TextStyle(color: Colors.white70, fontSize: 12)),
-              ],
-            ),
-          ),
-          ListTile(leading: const Icon(Icons.home), title: const Text('Home'),
-            onTap: () { Navigator.pop(context); Navigator.pushReplacementNamed(context, '/'); }),
-          ListTile(leading: const Icon(Icons.info), title: const Text('About Us'),
-            onTap: () { Navigator.pop(context); Navigator.pushNamed(context, '/about-us'); }),
-          ListTile(leading: const Icon(Icons.gavel), title: const Text('Auction'),
-            onTap: () { Navigator.pop(context); Navigator.pushNamed(context, '/auction'); }),
-          ListTile(leading: const Icon(Icons.list_alt), title: const Text('Classified'),
-            onTap: () => Navigator.pop(context)),
-          ListTile(leading: const Icon(Icons.contact_support), title: const Text('Contact Us'),
-            onTap: () { Navigator.pop(context); Navigator.pushNamed(context, '/contact-us'); }),
-        ],
-      ),
-    );
-  }
+
 }

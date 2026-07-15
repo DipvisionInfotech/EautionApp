@@ -5,6 +5,7 @@ import 'pages/auction_page.dart';
 import 'pages/classified_page.dart';
 import 'pages/contact_us_page.dart';
 import 'pages/register_page.dart';
+import 'pages/past_auctions_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -31,6 +32,7 @@ class MyApp extends StatelessWidget {
         '/classified': (context) => const ClassifiedPage(),
         '/contact-us': (context) => const ContactUsPage(),
         '/register': (context) => const RegisterPage(),
+        '/past-auctions': (context) => const PastAuctionsPage(),
       },
     );
   }

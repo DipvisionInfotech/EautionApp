@@ -342,6 +342,10 @@ class _HeaderState extends State<Header> {
                 _navItem(context, 'Home', active: widget.activePage == 'Home', onTap: widget.onHomeTap),
                 _navItem(context, 'About Us', active: widget.activePage == 'About Us', onTap: widget.onAboutUsTap),
                 _navItem(context, 'Auction', active: widget.activePage == 'Auction', onTap: widget.onAuctionTap),
+                if (_isLoggedIn && _userProfile != null && _userProfile!['role'] == 'bidder')
+                  _navItem(context, 'Past Auctions', active: widget.activePage == 'Past Auctions', onTap: () {
+                    Navigator.pushNamed(context, '/past-auctions');
+                  }),
                 _navItem(context, 'Classified', active: widget.activePage == 'Classified', onTap: widget.onClassifiedTap),
                 _navItem(context, 'Contact Us', active: widget.activePage == 'Contact Us', onTap: widget.onContactUsTap),
               ],

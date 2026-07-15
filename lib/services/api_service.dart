@@ -144,14 +144,15 @@ class ApiService {
   }
 
   // Auction Rooms Methods
-  static Future<Map<String, dynamic>> getRooms() async {
+  static Future<Map<String, dynamic>> getRooms({bool past = false}) async {
     final token = await getAccessToken();
     final headers = <String, String>{'Content-Type': 'application/json'};
     if (token != null) headers['Authorization'] = 'Bearer $token';
 
     try {
+      final url = past ? '$baseUrl/rooms/?past=true' : '$baseUrl/rooms/';
       final response = await http.get(
-        Uri.parse('$baseUrl/rooms/'),
+        Uri.parse(url),
         headers: headers,
       );
       if (response.statusCode == 200) {
