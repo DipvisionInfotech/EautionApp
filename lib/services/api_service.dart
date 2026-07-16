@@ -309,6 +309,12 @@ class ApiService {
     required String message,
     String? auctionId,  // Optional auction ID
   }) async {
+    final token = await getAccessToken();
+    final headers = <String, String>{'Content-Type': 'application/json'};
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
     final body = {
       'name': name,
       'email': email,
@@ -328,7 +334,7 @@ class ApiService {
     
     final response = await http.post(
       Uri.parse('$baseUrl/enquiry/'),
-      headers: {'Content-Type': 'application/json'},
+      headers: headers,
       body: jsonEncode(body),
     );
 

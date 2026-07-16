@@ -10,6 +10,7 @@ import 'pages/seller_auctions_page.dart';
 import 'pages/seller_enquiries_page.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 

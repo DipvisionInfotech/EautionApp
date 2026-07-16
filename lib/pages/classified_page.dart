@@ -382,7 +382,7 @@ class _ClassifiedPageState extends State<ClassifiedPage> {
                         ],
                       ),
                       child: ElevatedButton(
-                        onPressed: () => EnquiryDialog.show(context, title, auctionId: itemId),
+                        onPressed: () => EnquiryDialog.show(context, title, auctionId: itemId, isClassified: true),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,

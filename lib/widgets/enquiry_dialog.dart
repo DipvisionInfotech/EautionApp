@@ -5,20 +5,23 @@ import '../services/api_service.dart';
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
   final String? auctionId;  // Can be auction room ID or classified item ID
+  final bool isClassified;
 
   const EnquiryDialog({
     super.key, 
     required this.auctionTitle,
     this.auctionId,
+    this.isClassified = false,
   });
 
-  static void show(BuildContext context, String auctionTitle, {String? auctionId}) {
-    print('DEBUG: Opening EnquiryDialog with title: $auctionTitle, auctionId: $auctionId');
+  static void show(BuildContext context, String auctionTitle, {String? auctionId, bool isClassified = false}) {
+    print('DEBUG: Opening EnquiryDialog with title: $auctionTitle, auctionId: $auctionId, isClassified: $isClassified');
     showDialog(
       context: context,
       builder: (context) => EnquiryDialog(
         auctionTitle: auctionTitle,
         auctionId: auctionId,
+        isClassified: isClassified,
       ),
     );
   }
@@ -45,6 +48,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   void initState() {
     super.initState();
     _messageController.text = "Yes, I am interested in this item. Kindly contact me through email or mobile.\n\nThanks";
+    if (widget.isClassified) {
+      _requestType = 'query';
+    }
     _checkLoginStatus();
   }
 
@@ -62,6 +68,10 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           _nameController.text = _loggedInName;
           _emailController.text = _loggedInEmail;
           _mobileController.text = _loggedInPhone;
+
+          if (widget.isClassified) {
+            _requestType = 'query';
+          }
         });
       }
     } else {
@@ -209,7 +219,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                         style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
                       ),
                       const SizedBox(height: 20),
-                      if (_isLoggedIn) ...[
+                      if (_isLoggedIn && !widget.isClassified) ...[
                         // Choice Selector for Logged-In Users
                         Container(
                           margin: const EdgeInsets.only(bottom: 20),
