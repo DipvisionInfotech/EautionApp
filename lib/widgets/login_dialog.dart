@@ -10,163 +10,186 @@ class LoginDialog {
 
     final success = await showDialog<bool>(
       context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        child: Container(
-          width: 400,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF0288D1),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (context) {
+        bool obscurePassword = true;
+        bool isLoggingIn = false;
+
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          child: Container(
+            width: 400,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: StatefulBuilder(
+              builder: (context, setState) {
+                return Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Text(
-                        'Login',
-                        style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      // Header
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0288D1),
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(10)),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Login',
+                              style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                            ),
+                            InkWell(
+                              onTap: () => Navigator.pop(context, false),
+                              child: Container(
+                                padding: const EdgeInsets.all(2),
+                                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.rectangle),
+                                child: const Icon(Icons.close, size: 16, color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      InkWell(
-                        onTap: () => Navigator.pop(context, false),
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.rectangle),
-                          child: const Icon(Icons.close, size: 16, color: Colors.grey),
+                      // Body
+                      Padding(
+                        padding: const EdgeInsets.all(30),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Email', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 8),
+                            _dialogTextField(
+                              'Enter your email',
+                              controller: emailController,
+                              validator: (v) {
+                                if (v == null || v.isEmpty) return 'Please enter email';
+                                if (!v.contains('@')) return 'Enter a valid email';
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 20),
+                            const Text('Password', style: TextStyle(fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 8),
+                            TextFormField(
+                              controller: passwordController,
+                              obscureText: obscurePassword,
+                              validator: (v) {
+                                if (v == null || v.isEmpty) return 'Please enter password';
+                                return null;
+                              },
+                              decoration: InputDecoration(
+                                hintText: 'Enter your password',
+                                hintStyle: const TextStyle(fontSize: 14, color: Colors.grey),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(25),
+                                  borderSide: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                                ),
+                                suffixIcon: IconButton(
+                                  icon: Icon(
+                                    obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                    color: Colors.grey,
+                                  ),
+                                  onPressed: () {
+                                    setState(() {
+                                      obscurePassword = !obscurePassword;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 30),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(context, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                const SizedBox(width: 15),
+                                ElevatedButton(
+                                  onPressed: isLoggingIn ? null : () async {
+                                    if (formKey.currentState!.validate()) {
+                                      setState(() => isLoggingIn = true);
+                                      
+                                      try {
+                                        final result = await ApiService.login(
+                                          emailController.text,
+                                          passwordController.text,
+                                        );
+                                        
+                                        setState(() => isLoggingIn = false);
+                                        
+                                        if (result['success']) {
+                                          if (context.mounted) Navigator.pop(context, true); // close login dialog with true
+                                          if (context.mounted) {
+                                            GeminiInfoDialog.show(
+                                              context,
+                                              'Login Success',
+                                              'Welcome back! You have successfully logged into Seal The Deal. You can now participate in auctions and manage your profile.',
+                                            );
+                                          }
+                                        } else {
+                                          String errorMsg = 'Invalid credentials';
+                                          if (result['error'] != null && result['error']['detail'] != null) {
+                                            errorMsg = result['error']['detail'].toString();
+                                          }
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+                                            );
+                                          }
+                                        }
+                                      } catch (e) {
+                                        setState(() => isLoggingIn = false);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            const SnackBar(content: Text('Network Error: Failed to connect to server'), backgroundColor: Colors.red),
+                                          );
+                                        }
+                                      }
+                                    }
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF0288D1),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                                  ),
+                                  child: isLoggingIn 
+                                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                      : const Text('Login'),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-                // Body
-                Padding(
-                  padding: const EdgeInsets.all(30),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Email', style: TextStyle(fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 8),
-                      _dialogTextField(
-                        'Enter your email',
-                        controller: emailController,
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Please enter email';
-                          if (!v.contains('@')) return 'Enter a valid email';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 20),
-                      const Text('Password', style: TextStyle(fontWeight: FontWeight.w500)),
-                      const SizedBox(height: 8),
-                      _dialogTextField(
-                        'Enter your password',
-                        isPassword: true,
-                        controller: passwordController,
-                        validator: (v) {
-                          if (v == null || v.isEmpty) return 'Please enter password';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 30),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context, false),
-                            child: const Text('Cancel'),
-                          ),
-                          const SizedBox(width: 15),
-                          StatefulBuilder(
-                            builder: (context, setState) {
-                              bool isLoggingIn = false;
-                              return ElevatedButton(
-                                onPressed: isLoggingIn ? null : () async {
-                                  if (formKey.currentState!.validate()) {
-                                    setState(() => isLoggingIn = true);
-                                    
-                                    try {
-                                      final result = await ApiService.login(
-                                        emailController.text,
-                                        passwordController.text,
-                                      );
-                                      
-                                      setState(() => isLoggingIn = false);
-                                      
-                                      if (result['success']) {
-                                        if (context.mounted) Navigator.pop(context, true); // close login dialog with true
-                                        if (context.mounted) {
-                                          GeminiInfoDialog.show(
-                                            context,
-                                            'Login Success',
-                                            'Welcome back! You have successfully logged into Seal The Deal. You can now participate in auctions and manage your profile.',
-                                          );
-                                        }
-                                      } else {
-                                        String errorMsg = 'Invalid credentials';
-                                        if (result['error'] != null && result['error']['detail'] != null) {
-                                          errorMsg = result['error']['detail'].toString();
-                                        }
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
-                                          );
-                                        }
-                                      }
-                                    } catch (e) {
-                                      setState(() => isLoggingIn = false);
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(content: Text('Network Error: Failed to connect to server'), backgroundColor: Colors.red),
-                                        );
-                                      }
-                                    }
-                                  }
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF0288D1),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                                ),
-                                child: isLoggingIn 
-                                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                    : const Text('Login'),
-                              );
-                            }
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                );
+              },
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
     return success ?? false;
   }
 
-  static Widget _dialogTextField(String hint, {bool isPassword = false, TextEditingController? controller, String? Function(String?)? validator}) {
+  static Widget _dialogTextField(String hint, {TextEditingController? controller, String? Function(String?)? validator}) {
     return TextFormField(
       controller: controller,
-      obscureText: isPassword,
       validator: validator,
       decoration: InputDecoration(
         hintText: hint,
         hintStyle: const TextStyle(fontSize: 14, color: Colors.grey),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(25),

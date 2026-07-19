@@ -4,6 +4,7 @@ import '../widgets/footer.dart';
 import '../services/api_service.dart';
 import '../widgets/custom_drawer.dart';
 import '../widgets/gemini_info_dialog.dart';
+import '../utils/date_utils.dart';
 
 class SellerEnquiriesPage extends StatefulWidget {
   const SellerEnquiriesPage({super.key});
@@ -256,7 +257,7 @@ class _SellerEnquiriesPageState extends State<SellerEnquiriesPage> {
         final status = (enquiry['status'] ?? 'new').toString().toLowerCase();
         final adminNotes = enquiry['admin_notes'] ?? '';
         final createdAt = enquiry['created_at'] != null
-            ? DateTime.parse(enquiry['created_at']).toLocal()
+            ? DateTimeUtils.parseUtc(enquiry['created_at'].toString())
             : null;
 
         Color badgeColor;

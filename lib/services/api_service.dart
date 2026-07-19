@@ -31,7 +31,7 @@ class ApiService {
 
   static Future<Map<String, dynamic>> register(
       String email, String password, String fullName, String role,
-      {List<String>? preferredCategories}) async {
+      {String? phone, String? address, List<String>? preferredCategories}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/register/'),
       headers: {'Content-Type': 'application/json'},
@@ -40,6 +40,8 @@ class ApiService {
         'password': password,
         'full_name': fullName,
         'role': role.toLowerCase(), // 'buyer' is mapped to 'bidder' in Django
+        if (phone != null && phone.isNotEmpty) 'phone': phone,
+        if (address != null && address.isNotEmpty) 'address': address,
         if (preferredCategories != null) 'preferred_categories': preferredCategories,
       }),
     );

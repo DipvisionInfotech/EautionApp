@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'enquiry_dialog.dart';
 import '../services/api_service.dart';
 import '../pages/live_auction_page.dart';
+import '../utils/date_utils.dart';
 
 // ─── Dashboard Homepage Section (shows 4 latest rooms) ────────────────────────
 
@@ -200,10 +201,10 @@ class AuctionCard extends StatefulWidget {
     DateTime? endTime;
     try {
       if (room['scheduled_start'] != null) {
-        startTime = DateTime.parse(room['scheduled_start'].toString()).toLocal();
+        startTime = DateTimeUtils.parseUtc(room['scheduled_start'].toString());
       }
       if (room['scheduled_end'] != null) {
-        endTime = DateTime.parse(room['scheduled_end'].toString()).toLocal();
+        endTime = DateTimeUtils.parseUtc(room['scheduled_end'].toString());
       }
     } catch (_) {}
 
@@ -512,8 +513,8 @@ class AuctionDetailDialog {
             final room = snapshot.data!['data'];
             final item = room['item'] as Map<String, dynamic>?;
             final description = room['description']?.toString() ?? item?['description']?.toString() ?? 'No description available.';
-            final start = room['scheduled_start'] != null ? DateTime.parse(room['scheduled_start'].toString()).toLocal() : null;
-            final end = room['scheduled_end'] != null ? DateTime.parse(room['scheduled_end'].toString()).toLocal() : null;
+            final start = room['scheduled_start'] != null ? DateTimeUtils.parseUtc(room['scheduled_start'].toString()) : null;
+            final end = room['scheduled_end'] != null ? DateTimeUtils.parseUtc(room['scheduled_end'].toString()) : null;
             final minBid = item?['min_bid'] ?? 0;
             final minRaise = item?['min_raise'] ?? 0;
 

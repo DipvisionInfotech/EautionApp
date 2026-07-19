@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
+import '../utils/date_utils.dart';
 
 class LiveAuctionPage extends StatefulWidget {
   final String roomId;
@@ -304,7 +305,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             _bidHistory.add({
               'alias': bidData['bidder_alias'],
               'amount': (bidData['amount'] as num).toDouble(),
-              'time': DateTime.parse(bidData['timestamp']).toLocal(),
+              'time': DateTimeUtils.parseUtc(bidData['timestamp']),
             });
           }
         }
@@ -315,7 +316,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         _bidHistory.insert(0, {
           'alias': data['bidder_alias'],
           'amount': _currentBid,
-          'time': DateTime.parse(data['timestamp']).toLocal(),
+          'time': DateTimeUtils.parseUtc(data['timestamp']),
         });
       } 
       else if (type == 'countdown_tick') {

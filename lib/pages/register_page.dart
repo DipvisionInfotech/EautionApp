@@ -86,6 +86,7 @@ class _RegisterPageState extends State<RegisterPage> {
           _passwordController.text,
           _nameController.text,
           apiRole,
+          phone: _phoneController.text,
           preferredCategories: preferredCats,
         );
 

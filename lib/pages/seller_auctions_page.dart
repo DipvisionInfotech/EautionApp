@@ -4,6 +4,7 @@ import '../widgets/footer.dart';
 import '../services/api_service.dart';
 import '../widgets/custom_drawer.dart';
 import 'live_auction_page.dart';
+import '../utils/date_utils.dart';
 
 class SellerAuctionsPage extends StatefulWidget {
   const SellerAuctionsPage({super.key});
@@ -205,7 +206,7 @@ class _SellerAuctionsPageState extends State<SellerAuctionsPage> {
         : 'https://placehold.co/600x400/png';
 
     final scheduledStart = room['scheduled_start'] != null
-        ? DateTime.parse(room['scheduled_start']).toLocal()
+        ? DateTimeUtils.parseUtc(room['scheduled_start'].toString())
         : null;
 
     final spectateEnabled = _sellerSettings == null || 
