@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io' as io;
+import '../utils/file_helper.dart';
 import '../widgets/header.dart';
 import '../widgets/footer.dart';
 import '../widgets/login_dialog.dart';
@@ -95,12 +95,7 @@ class _RegisterPageState extends State<RegisterPage> {
           String? uploadError;
 
           if (_docFile != null) {
-            List<int> fileBytes;
-            if (kIsWeb) {
-              fileBytes = _docFile!.bytes!;
-            } else {
-              fileBytes = await io.File(_docFile!.path!).readAsBytes();
-            }
+            final fileBytes = await getPlatformFileBytes(_docFile);
 
             final uploadRes = await ApiService.uploadKYCDocument(
               _docType,
@@ -361,31 +356,43 @@ class _RegisterPageState extends State<RegisterPage> {
                     const SizedBox(width: 10),
                     ElevatedButton(
                       onPressed: () async {
-                        final result = await FilePicker.platform.pickFiles(
-                          type: FileType.any,
-                        );
-                        if (result != null) {
-                          final file = result.files.single;
-                          const maxSizeBytes = 2 * 1024 * 1024;
-                          if (file.size > maxSizeBytes) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('File size must be under 2MB.')),
-                              );
+                        try {
+                          checkFilePickerInit();
+                          final result = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                            withData: true,
+                          );
+                          if (result != null) {
+                            final file = result.files.single;
+                            const maxSizeBytes = 2 * 1024 * 1024;
+                            if (file.size > maxSizeBytes) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('File size must be under 2MB.')),
+                                );
+                              }
+                              return;
                             }
-                            return;
-                          }
-                          final ext = file.name.split('.').last.toLowerCase();
-                          const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
-                          if (!allowedExts.contains(ext)) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Only PDF and Image files (.pdf, .jpg, .jpeg, .png) are allowed.')),
-                              );
+                            final ext = file.name.split('.').last.toLowerCase();
+                            const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
+                            if (!allowedExts.contains(ext)) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Only PDF and Image files (.pdf, .jpg, .jpeg, .png) are allowed.')),
+                                );
+                              }
+                              return;
                             }
-                            return;
+                            setState(() => _docFile = file);
                           }
-                          setState(() => _docFile = file);
+                        } catch (e) {
+                          debugPrint('Error picking file: $e');
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Failed to open file picker: $e')),
+                            );
+                          }
                         }
                       },
                       style: ElevatedButton.styleFrom(
@@ -393,7 +400,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       ),
-                      child: const Text('Choose File', style: TextStyle(fontSize: 12)),
+                      child: const Text('Select File', style: TextStyle(fontSize: 12)),
                     ),
                   ],
                 ),

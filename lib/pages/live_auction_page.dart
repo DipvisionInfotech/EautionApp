@@ -64,6 +64,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) {
+        debugPrint("DEBUG COUNTDOWN TICK: remaining_sec=$_timeRemainingSec, ended=$_auctionEnded");
         if (_timeRemainingSec > 0 && !_auctionEnded) {
           setState(() {
             _timeRemainingSec--;
@@ -288,56 +289,61 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   void _handleWebSocketMessage(Map<String, dynamic> data) {
     if (!mounted) return;
 
-    final type = data['type'];
+    try {
+      final type = data['type'];
 
-    setState(() {
-      if (type == 'room_state') {
-        _currentBid = (data['current_bid'] as num).toDouble();
-        _bidderCount = data['bidder_count'] as int;
-        _timeRemainingSec = data['time_remaining_sec'] as int;
-        // Backend tells us if this connection is spectator-only
-        if (data['is_spectator'] == true) {
-          _isSpectator = true;
-        }
-        if (data['bids'] != null) {
-          _bidHistory.clear();
-          for (var bidData in data['bids']) {
-            _bidHistory.add({
-              'alias': bidData['bidder_alias'],
-              'amount': (bidData['amount'] as num).toDouble(),
-              'time': DateTimeUtils.parseUtc(bidData['timestamp']),
-            });
+      setState(() {
+        if (type == 'room_state') {
+          _currentBid = (data['current_bid'] as num?)?.toDouble() ?? 0.0;
+          _bidderCount = (data['bidder_count'] as num?)?.toInt() ?? 0;
+          _timeRemainingSec = (data['time_remaining_sec'] as num?)?.toInt() ?? 0;
+          
+          // Backend tells us if this connection is spectator-only
+          if (data['is_spectator'] == true) {
+            _isSpectator = true;
+          }
+          if (data['bids'] != null) {
+            _bidHistory.clear();
+            for (var bidData in data['bids']) {
+              _bidHistory.add({
+                'alias': bidData['bidder_alias']?.toString() ?? 'Unknown',
+                'amount': (bidData['amount'] as num?)?.toDouble() ?? 0.0,
+                'time': DateTimeUtils.parseUtc(bidData['timestamp']?.toString()),
+              });
+            }
+          }
+          _startCountdownTimer();
+        } 
+        else if (type == 'new_bid') {
+          _currentBid = (data['amount'] as num?)?.toDouble() ?? 0.0;
+          _bidHistory.insert(0, {
+            'alias': data['bidder_alias']?.toString() ?? 'Unknown',
+            'amount': _currentBid,
+            'time': DateTimeUtils.parseUtc(data['timestamp']?.toString()),
+          });
+        } 
+        else if (type == 'countdown_tick') {
+          _timeRemainingSec = (data['seconds_remaining'] as num?)?.toInt() ?? _timeRemainingSec;
+        } 
+        else if (type == 'auction_ended') {
+          _auctionEnded = true;
+          _winnerAlias = data['winner_alias']?.toString();
+          _winningBid = (data['winning_bid'] as num?)?.toDouble();
+          _showWinnerDialog();
+        } 
+        else if (type == 'error' || type == 'bid_rejected') {
+          final reason = data['reason']?.toString() ?? data['message']?.toString() ?? 'Error placing bid';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(reason), backgroundColor: Colors.red),
+          );
+          if (data['current_bid'] != null) {
+            _currentBid = (data['current_bid'] as num?)?.toDouble() ?? _currentBid;
           }
         }
-        _startCountdownTimer();
-      } 
-      else if (type == 'new_bid') {
-        _currentBid = (data['amount'] as num).toDouble();
-        _bidHistory.insert(0, {
-          'alias': data['bidder_alias'],
-          'amount': _currentBid,
-          'time': DateTimeUtils.parseUtc(data['timestamp']),
-        });
-      } 
-      else if (type == 'countdown_tick') {
-        _timeRemainingSec = data['seconds_remaining'] as int;
-      } 
-      else if (type == 'auction_ended') {
-        _auctionEnded = true;
-        _winnerAlias = data['winner_alias'];
-        _winningBid = (data['winning_bid'] as num).toDouble();
-        _showWinnerDialog();
-      } 
-      else if (type == 'error' || type == 'bid_rejected') {
-        final reason = data['reason'] ?? data['message'] ?? 'Error placing bid';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(reason), backgroundColor: Colors.red),
-        );
-        if (data['current_bid'] != null) {
-          _currentBid = (data['current_bid'] as num).toDouble();
-        }
-      }
-    });
+      });
+    } catch (e, stack) {
+      print("Error handling WebSocket message: $e\n$stack");
+    }
   }
 
   void _placeBid() {
@@ -411,8 +417,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   }
 
   String _formatTime(int seconds) {
-    int m = seconds ~/ 60;
+    int h = seconds ~/ 3600;
+    int m = (seconds % 3600) ~/ 60;
     int s = seconds % 60;
+    if (h > 0) {
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 

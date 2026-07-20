@@ -46,19 +46,15 @@ class Footer extends StatelessWidget {
           const Divider(color: Colors.white24),
           const SizedBox(height: 20),
           if (isMobile)
-            Column(
+            const Column(
               children: [
-                const Text('© Copyright 2026 Sealthedeal. All rights reserved.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 10),
-                const Text('Developed By: Kodeberg Labs', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Text('© Copyright 2026 Sealthedeal. All rights reserved.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
               ],
             )
           else
             const Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(child: Text('© Copyright 2026 Sealthedeal. All rights reserved.', style: TextStyle(color: Colors.grey, fontSize: 12))),
-                Expanded(child: Text('Developed By: Kodeberg Labs', textAlign: TextAlign.end, style: TextStyle(color: Colors.grey, fontSize: 12))),
               ],
             ),
         ],
@@ -217,17 +213,17 @@ class Footer extends StatelessWidget {
           _discoverItem(
             context,
             'e-Auction',
-            'Understanding the E-Auction Process\n\nE-auctions, or electronic auctions, represent a modern approach to buying and selling goods and services online. They leverage internet technology to facilitate the bidding process, allowing participants from diverse locations to compete for items in real-time. This method offers a streamlined and often transparent way to acquire items, ranging from consumer goods to industrial equipment and even government contracts.\n\nKey Advantages for Buyers\n\nFor potential buyers, e-auctions present several compelling benefits. They often provide access to a wider selection of items than traditional methods, potentially including unique or hard-to-find goods. The competitive nature of bidding can sometimes lead to securing items below their typical market value, offering significant cost savings. Furthermore, the convenience of participating from anywhere with an internet connection eliminates geographical barriers and reduces the time and expense associated with physical auctions.',
+            'About Seal The Deal e-Auctions\n\nSeal The Deal is a premier online marketplace specializing in forward e-Auctions for insurance salvage, commercial assets, and industrial disposal. We connect insurance companies and corporate clients with certified buyers to ensure high realization value and transparency in disposal.\n\nKey Advantages of Seal The Deal\n\nWe provide a secure, audited bidding platform with real-time bidding updates, automated credential management, and detailed ledger trails. Bidders can participate in auctions from anywhere in India with full transparency.',
           ),
           _discoverItem(
             context,
-            'E-Commerce Services',
-            'Understanding E-commerce Services\n\nE-commerce services encompass a wide range of tools and platforms designed to facilitate online business transactions. These services are essential for anyone looking to sell products or services over the internet, providing the necessary infrastructure for everything from building a website to processing payments and managing inventory.\n\nShopify: A Popular All-in-One Platform\n\nShopify is a widely-used e-commerce platform that offers a comprehensive suite of tools for creating and managing an online store. It provides customizable templates, secure payment processing, inventory management, and marketing tools, all within a single interface.\n\nWooCommerce: Flexibility for WordPress Users\n\nWooCommerce is a free, open-source e-commerce plugin specifically designed for WordPress websites. It allows users to transform their existing WordPress site into a...',
+            'Salvage Services',
+            'Commercial Liquidations & Salvage Sales\n\nSeal The Deal provides comprehensive disposal services for a wide variety of salvage, including automobiles, machinery, metals, electronics, and warehouse stock. We handle the entire cataloging, bidding interest verification, and document collection process.\n\nOur Services:\n\n* Audited transparent bidding rooms\n* KYC-verified buyer network\n* Automated bidder verification and approval\n* Quick payout and delivery tracking for sellers',
           ),
           _discoverItem(
             context,
-            'Auctions',
-            'Understanding Auctions: A Buyer\'s Guide\n\nAuctions represent a unique marketplace where goods and services are sold to the highest bidder. They can cover a vast range of items, from fine art and antiques to real estate, vehicles, and industrial equipment. Understanding the auction process, including how bidding works and the potential fees involved, is crucial for anyone considering making a purchase. Auctions can offer opportunities to acquire items at potentially competitive prices, but they also require careful research and a clear understanding of the rules before participating.\n\nExploring Online Auction Platforms: eBay\n\neBay is perhaps the most well-known online auction platform, connecting buyers and sellers globally. It allows individuals and businesses to list items for auction, setting a starting price and duration. Buyers place bids, and the highest bidder wins the item at the end of the specified period. eBay also offers \'Buy It Now\' options, blurring the lines between traditional auctions and fixed-price retail. Understanding the bidding increments, shipping costs, and seller feedback is essential when using eBay for purchases.\n\nSpecialized Auctions: Sotheby\'s and Fine Art\n\nFor high-value items like fine art, antiques, and luxury goods, auction houses like Sotheby\'s operate both online and in physical salerooms. These auctions are often highly curated, featuring items with significant provenance and value. Participating in these requires registration, potential financial vetting, and understanding specific',
+            'Bidding Rules',
+            'Seal The Deal Bidding Guidelines\n\nTo maintain the integrity of our marketplace, all participants must follow our bidding rules:\n\n* KYC Verification: All buyers must complete their profile and submit valid identity proof (Aadhaar/PAN) for admin review.\n* Registration Fee: Certain auctions require a refundable or adjustable registration fee to filter serious participants.\n* Atomic Bidding: All bids are processed atomically through our real-time engine to prevent overlaps or ghost bids.\n* Binding Offers: Every bid placed is a legally binding commitment to purchase the asset at the specified value.',
           ),
         ],
       ),

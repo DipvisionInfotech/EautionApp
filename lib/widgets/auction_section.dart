@@ -30,7 +30,7 @@ class _AuctionSectionState extends State<AuctionSection> {
     if (mounted) {
       setState(() {
         _rooms = result['success'] == true
-            ? ((result['data']['results'] as List<dynamic>?) ?? []).take(4).toList()
+            ? ((result['data']['results'] as List<dynamic>?) ?? [])
             : [];
         _isLoading = false;
       });
@@ -42,6 +42,16 @@ class _AuctionSectionState extends State<AuctionSection> {
     double screenWidth = MediaQuery.of(context).size.width;
     bool isMobile = screenWidth < 900;
 
+    final liveRooms = _rooms
+        .where((r) => r is Map && r['status'] == 'live')
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+        
+    final upcomingRooms = _rooms
+        .where((r) => r is Map && r['status'] == 'upcoming')
+        .map((r) => Map<String, dynamic>.from(r as Map))
+        .toList();
+
     return Container(
       color: Colors.white,
       padding: EdgeInsets.symmetric(
@@ -51,87 +61,109 @@ class _AuctionSectionState extends State<AuctionSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0288D1).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: const Text(
-                      'EXCLUSIVE DEALS',
-                      style: TextStyle(
-                        color: Color(0xFF0288D1),
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.2,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Upcoming Auctions',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                ],
-              ),
-              if (!isMobile)
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.pushNamed(context, '/auction'),
-                  icon: const Icon(Icons.grid_view_rounded, size: 18),
-                  label: const Text('View All Auctions'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: const Color(0xFF0288D1),
-                    elevation: 0,
-                    side: const BorderSide(color: Color(0xFFE2E8F0)),
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 40),
           if (_isLoading)
             const Center(child: Padding(
               padding: EdgeInsets.all(40),
               child: CircularProgressIndicator(color: Color(0xFF0288D1)),
             ))
-          else if (_rooms.isEmpty)
+          else if (_rooms.isEmpty || (liveRooms.isEmpty && upcomingRooms.isEmpty))
             _buildEmptyState()
-          else if (isMobile)
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _rooms.length,
-              separatorBuilder: (context, index) => const SizedBox(height: 24),
-              itemBuilder: (context, index) => AuctionCard.fromRoom(_rooms[index]),
-            )
-          else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: screenWidth > 1200 ? 2 : 1,
-                mainAxisExtent: 220,
-                crossAxisSpacing: 30,
-                mainAxisSpacing: 30,
-              ),
-              itemCount: _rooms.length,
-              itemBuilder: (context, index) => AuctionCard.fromRoom(_rooms[index]),
-            ),
+          else ...[
+            _buildAuctionSection('LIVE NOW', 'Live Auctions', liveRooms, Colors.red, screenWidth, isMobile),
+            if (liveRooms.isNotEmpty && upcomingRooms.isNotEmpty)
+              const SizedBox(height: 60),
+            _buildAuctionSection('EXCLUSIVE DEALS', 'Upcoming Auctions', upcomingRooms, const Color(0xFF0288D1), screenWidth, isMobile),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _buildAuctionSection(
+    String badgeText,
+    String sectionTitle,
+    List<Map<String, dynamic>> rooms,
+    Color themeColor,
+    double screenWidth,
+    bool isMobile,
+  ) {
+    if (rooms.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: themeColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      color: themeColor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  sectionTitle,
+                  style: const TextStyle(
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF1E293B),
+                  ),
+                ),
+              ],
+            ),
+            if (!isMobile && sectionTitle.contains('Upcoming'))
+              ElevatedButton.icon(
+                onPressed: () => Navigator.pushNamed(context, '/auction'),
+                icon: const Icon(Icons.grid_view_rounded, size: 18),
+                label: const Text('View All Auctions'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF0288D1),
+                  elevation: 0,
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 40),
+        isMobile
+            ? ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: rooms.length,
+                separatorBuilder: (context, index) => const SizedBox(height: 24),
+                itemBuilder: (context, index) => AuctionCard.fromRoom(rooms[index]),
+              )
+            : GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: screenWidth > 1200 ? 2 : 1,
+                  mainAxisExtent: 220,
+                  crossAxisSpacing: 30,
+                  mainAxisSpacing: 30,
+                ),
+                itemCount: rooms.length,
+                itemBuilder: (context, index) => AuctionCard.fromRoom(rooms[index]),
+              ),
+      ],
     );
   }
 

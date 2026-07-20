@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io' as io;
+import '../utils/file_helper.dart';
 import 'package:e_auction/widgets/login_dialog.dart';
 import 'package:e_auction/widgets/gemini_info_dialog.dart';
 import 'package:e_auction/services/api_service.dart';
@@ -91,11 +91,25 @@ class _HeaderState extends State<Header> {
         String selectedDocType = 'aadhaar';
         bool isUploading = false;
         String? uploadError;
+        List<dynamic> kycDocs = [];
+        bool isLoadingDocs = true;
 
         return StatefulBuilder(
           builder: (context, setState) {
             final kycVerified = _userProfile!['kyc_verified'] == true;
             final isAdmin = _userProfile!['role'] == 'admin';
+
+            // Fetch document list once
+            if (isLoadingDocs && !isAdmin) {
+              isLoadingDocs = false;
+              ApiService.getKYCStatus().then((res) {
+                if (res['success'] == true && res['data'] != null && mounted) {
+                  setState(() {
+                    kycDocs = res['data']['documents'] ?? [];
+                  });
+                }
+              });
+            }
 
             return AlertDialog(
               title: const Text('My Profile', style: TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF1A237E))),
@@ -118,6 +132,70 @@ class _HeaderState extends State<Header> {
                         kycVerified ? 'VERIFIED' : 'PENDING REVIEW / UNVERIFIED',
                         color: kycVerified ? Colors.green : Colors.orange,
                       ),
+                      const Divider(),
+                    ],
+                    if (!isAdmin && kycDocs.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      const Text(
+                        'Uploaded Documents:',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1A237E)),
+                      ),
+                      const SizedBox(height: 5),
+                      ...kycDocs.map((doc) {
+                        final docTypeStr = doc['type']?.toString().toUpperCase() ?? '';
+                        final size = ((doc['size'] ?? 0) / 1024).toStringAsFixed(0);
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('• $docTypeStr ($size KB)', style: const TextStyle(fontSize: 12)),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: EdgeInsets.zero,
+                                icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18),
+                                onPressed: () async {
+                                  final confirm = await showDialog<bool>(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Delete Document'),
+                                      content: Text('Are you sure you want to delete your $docTypeStr document?'),
+                                      actions: [
+                                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
+                                      ],
+                                    ),
+                                  );
+                                  if (confirm == true) {
+                                    final res = await ApiService.deleteKYCDocument(doc['type']);
+                                    if (res['success'] == true) {
+                                      // Reload status
+                                      final newStatus = await ApiService.getKYCStatus();
+                                      if (newStatus['success'] == true && mounted) {
+                                        setState(() {
+                                          kycDocs = newStatus['data']['documents'] ?? [];
+                                        });
+                                      }
+                                      await _checkLoginStatus(); // Update outer status
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(content: Text('Document deleted successfully!')),
+                                        );
+                                      }
+                                    } else {
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(content: Text(res['error']?.toString() ?? 'Delete failed')),
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
                       const Divider(),
                     ],
                     if (!kycVerified && !isAdmin) ...[
@@ -161,8 +239,11 @@ class _HeaderState extends State<Header> {
                         ElevatedButton.icon(
                           onPressed: () async {
                             try {
+                              checkFilePickerInit();
                               final result = await FilePicker.platform.pickFiles(
-                                type: FileType.any,
+                                type: FileType.custom,
+                                allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                                withData: true,
                               );
                               if (result != null) {
                                 final file = result.files.single;
@@ -173,28 +254,14 @@ class _HeaderState extends State<Header> {
                                   });
                                   return;
                                 }
-                                final ext = file.name.split('.').last.toLowerCase();
-                                const allowedExts = ['pdf', 'jpg', 'jpeg', 'png'];
-                                if (!allowedExts.contains(ext)) {
-                                  setState(() {
-                                    uploadError = 'Only PDF and Image files (.pdf, .jpg, .jpeg, .png) are allowed.';
-                                  });
-                                  return;
-                                }
 
                                 setState(() {
                                   isUploading = true;
                                   uploadError = null;
                                 });
                                 
-                                List<int> fileBytes;
-                                String fileName = result.files.single.name;
-                                
-                                if (kIsWeb) {
-                                  fileBytes = result.files.single.bytes!;
-                                } else {
-                                  fileBytes = await io.File(result.files.single.path!).readAsBytes();
-                                }
+                                final fileBytes = await getPlatformFileBytes(file);
+                                String fileName = file.name;
                                 
                                 final res = await ApiService.uploadKYCDocument(
                                   selectedDocType,
@@ -204,11 +271,16 @@ class _HeaderState extends State<Header> {
                                 
                                 if (res['success'] == true) {
                                   await _checkLoginStatus();
+                                  final newStatus = await ApiService.getKYCStatus();
+                                  if (newStatus['success'] == true && mounted) {
+                                    setState(() {
+                                      kycDocs = newStatus['data']['documents'] ?? [];
+                                    });
+                                  }
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(content: Text('KYC Document uploaded successfully!')),
                                     );
-                                    Navigator.pop(context);
                                   }
                                 } else {
                                   setState(() {

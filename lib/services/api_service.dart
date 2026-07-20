@@ -18,9 +18,63 @@ class ApiService {
     await prefs.setString('refresh_token', refresh);
   }
 
+  static bool isTokenExpired(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+      final payload = utf8.decode(base64Url.decode(base64Url.normalize(parts[1])));
+      final map = jsonDecode(payload);
+      final exp = map['exp'] as int?;
+      if (exp == null) return false;
+      final expiryDate = DateTime.fromMillisecondsSinceEpoch(exp * 1000);
+      // Use a 10 seconds buffer
+      return DateTime.now().add(const Duration(seconds: 10)).isAfter(expiryDate);
+    } catch (_) {
+      return true;
+    }
+  }
+
+  static Future<String?> refreshAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    final refresh = prefs.getString('refresh_token');
+    if (refresh == null) return null;
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/token/refresh/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh': refresh}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final newAccess = data['access'] as String?;
+        if (newAccess != null) {
+          await prefs.setString('access_token', newAccess);
+          final newRefresh = data['refresh'] as String?;
+          if (newRefresh != null) {
+            await prefs.setString('refresh_token', newRefresh);
+          }
+          return newAccess;
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   static Future<String?> getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('access_token');
+    final access = prefs.getString('access_token');
+    if (access == null) return null;
+
+    if (isTokenExpired(access)) {
+      final refreshed = await refreshAccessToken();
+      if (refreshed != null) {
+        return refreshed;
+      }
+      await clearTokens();
+      return null;
+    }
+    return access;
   }
 
   static Future<void> clearTokens() async {
@@ -136,6 +190,50 @@ class ApiService {
       }
 
       if (response.statusCode == 201 || response.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(response.body)};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getKYCStatus() async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'No token'};
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/kyc/status/'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(response.body)};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  static Future<Map<String, dynamic>> deleteKYCDocument(String type) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'No token'};
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/kyc/replace/$type/'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+      if (response.statusCode == 200) {
         return {'success': true, 'data': jsonDecode(response.body)};
       } else {
         return {'success': false, 'error': jsonDecode(response.body)};
