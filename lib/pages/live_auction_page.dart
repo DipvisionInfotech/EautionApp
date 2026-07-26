@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
 import '../utils/date_utils.dart';
+import '../utils/number_to_words.dart';
 
 class LiveAuctionPage extends StatefulWidget {
   final String roomId;
@@ -346,6 +347,13 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     }
   }
 
+  String _formatCurrency(num amount) {
+    if (amount % 1 == 0) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toStringAsFixed(2);
+  }
+
   void _placeBid() {
     // Extra safety guard: admins should never get here, but just in case
     if (_isSpectator) {
@@ -363,7 +371,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     final amount = double.tryParse(_bidController.text);
     if (amount == null || amount <= _currentBid) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bid must be higher than current bid (₹${_currentBid.toStringAsFixed(0)})')),
+        SnackBar(content: Text('Bid must be higher than current bid (₹${_formatCurrency(_currentBid)})')),
       );
       return;
     }
@@ -587,6 +595,13 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
+                                  if (_roomDetails!['item']?['quantity'] != null) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Qty: ${formatQuantityWithWords(_roomDetails!['item']?['quantity'])}',
+                                      style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
                                   const SizedBox(height: 8),
                                   Row(
                                     children: [
@@ -604,7 +619,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                             ),
                                             const SizedBox(height: 2),
                                             Text(
-                                              '₹${(_roomDetails!['item']?['min_bid'] ?? 0.0).toStringAsFixed(0)}',
+                                              '₹${_formatCurrency(_roomDetails!['item']?['min_bid'] ?? 0.0)}',
                                               style: const TextStyle(
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.bold,
@@ -630,7 +645,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                '₹${(_roomDetails!['item']['min_raise'] as num).toStringAsFixed(0)}',
+                                                '₹${_formatCurrency(_roomDetails!['item']['min_raise'] as num)}',
                                                 style: const TextStyle(
                                                   fontSize: 14,
                                                   fontWeight: FontWeight.bold,
@@ -663,7 +678,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                 children: [
                                   const Text('CURRENT BID', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
                                   Text(
-                                    '₹${_currentBid.toStringAsFixed(0)}',
+                                    '₹${_formatCurrency(_currentBid)}',
                                     style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF0288D1)),
                                   ),
                                 ],

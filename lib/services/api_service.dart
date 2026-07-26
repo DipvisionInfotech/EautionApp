@@ -303,9 +303,28 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> registerInterest(String roomId, {String? message, String? contactPreference}) async {
+  static Future<Map<String, dynamic>> registerInterest(
+    String roomId, {
+    String? message,
+    String? contactPreference,
+    String? ddNumber,
+    String? ddBank,
+    String? ddDate,
+    double? ddAmount,
+    String? ddFile,
+  }) async {
     final token = await getAccessToken();
     if (token == null) return {'success': false, 'error': 'Not logged in'};
+
+    final bodyData = <String, dynamic>{
+      if (message != null) 'message': message,
+      'contact_preference': contactPreference ?? 'email',
+      if (ddNumber != null && ddNumber.isNotEmpty) 'dd_number': ddNumber,
+      if (ddBank != null && ddBank.isNotEmpty) 'dd_bank': ddBank,
+      if (ddDate != null && ddDate.isNotEmpty) 'dd_date': ddDate,
+      if (ddAmount != null) 'dd_amount': ddAmount,
+      if (ddFile != null && ddFile.isNotEmpty) 'dd_file': ddFile,
+    };
 
     final response = await http.post(
       Uri.parse('$baseUrl/rooms/$roomId/register-interest/'),
@@ -313,10 +332,7 @@ class ApiService {
         'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
       },
-      body: jsonEncode({
-        if (message != null) 'message': message,
-        'contact_preference': contactPreference ?? 'email',
-      }),
+      body: jsonEncode(bodyData),
     );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
@@ -327,6 +343,37 @@ class ApiService {
       } catch (_) {
         return {'success': false, 'error': 'Failed to register interest'};
       }
+    }
+  }
+
+  static Future<Map<String, dynamic>> uploadDDDocument(
+      String roomId, List<int> fileBytes, String fileName) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'No token'};
+
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/rooms/$roomId/upload-dd/'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        fileBytes,
+        filename: fileName,
+      ));
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'object_key': data['object_key'], 'url': data['url']};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'Failed to upload document'};
     }
   }
 

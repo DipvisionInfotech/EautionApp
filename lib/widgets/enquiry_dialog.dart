@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'gemini_info_dialog.dart';
 import '../services/api_service.dart';
+import '../utils/file_helper.dart';
 
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
@@ -15,7 +17,6 @@ class EnquiryDialog extends StatefulWidget {
   });
 
   static void show(BuildContext context, String auctionTitle, {String? auctionId, bool isClassified = false}) {
-    print('DEBUG: Opening EnquiryDialog with title: $auctionTitle, auctionId: $auctionId, isClassified: $isClassified');
     showDialog(
       context: context,
       builder: (context) => EnquiryDialog(
@@ -37,12 +38,22 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
   final _emailController = TextEditingController();
   final _messageController = TextEditingController();
 
+  final _ddNumberController = TextEditingController();
+  final _ddBankController = TextEditingController();
+  final _ddDateController = TextEditingController();
+  final _ddAmountController = TextEditingController();
+
   bool _isSending = false;
   bool _isLoggedIn = false;
   String _loggedInName = '';
   String _loggedInEmail = '';
   String _loggedInPhone = '';
   String _requestType = 'bidding'; // 'bidding' or 'query'
+
+  String? _ddFileName;
+  String? _ddFileObjectKey;
+  bool _isUploadingDD = false;
+  String? _ddUploadError;
 
   @override
   void initState() {
@@ -90,7 +101,55 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
     _mobileController.dispose();
     _emailController.dispose();
     _messageController.dispose();
+    _ddNumberController.dispose();
+    _ddBankController.dispose();
+    _ddDateController.dispose();
+    _ddAmountController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDDFile() async {
+    if (widget.auctionId == null || widget.auctionId!.isEmpty) return;
+    try {
+      checkFilePickerInit();
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result != null) {
+        final file = result.files.single;
+        if (file.size > 5 * 1024 * 1024) {
+          setState(() => _ddUploadError = 'File size must be under 5MB');
+          return;
+        }
+        setState(() {
+          _isUploadingDD = true;
+          _ddUploadError = null;
+        });
+        final bytes = await getPlatformFileBytes(file);
+        final res = await ApiService.uploadDDDocument(widget.auctionId!, bytes, file.name);
+        if (res['success'] == true && mounted) {
+          setState(() {
+            _ddFileName = file.name;
+            _ddFileObjectKey = res['object_key'];
+            _isUploadingDD = false;
+          });
+        } else if (mounted) {
+          setState(() {
+            _ddUploadError = 'Failed to upload DD file';
+            _isUploadingDD = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _ddUploadError = 'Error picking file: $e';
+          _isUploadingDD = false;
+        });
+      }
+    }
   }
 
   Future<void> _sendEnquiry() async {
@@ -115,6 +174,11 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
             widget.auctionId!,
             message: _messageController.text,
             contactPreference: 'either',
+            ddNumber: _ddNumberController.text.trim(),
+            ddBank: _ddBankController.text.trim(),
+            ddDate: _ddDateController.text.trim(),
+            ddAmount: double.tryParse(_ddAmountController.text.trim()),
+            ddFile: _ddFileObjectKey,
           );
           success = result['success'] == true;
           successMessage = 'Your request to participate in bidding has been submitted for approval!';
@@ -292,6 +356,124 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                             ],
                           ),
                         ),
+                        if (_requestType == 'bidding') ...[
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            margin: const EdgeInsets.only(bottom: 20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F9FF),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFBAE6FD)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'EMD Demand Draft (DD) Details',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A237E)),
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('DD Number', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                          const SizedBox(height: 6),
+                                          TextFormField(
+                                            controller: _ddNumberController,
+                                            enabled: !_isSending,
+                                            decoration: _inputDecoration('e.g. 654321'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('Issuing Bank Name', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                          const SizedBox(height: 6),
+                                          TextFormField(
+                                            controller: _ddBankController,
+                                            enabled: !_isSending,
+                                            decoration: _inputDecoration('e.g. State Bank of India'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('DD Amount (₹)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                          const SizedBox(height: 6),
+                                          TextFormField(
+                                            controller: _ddAmountController,
+                                            enabled: !_isSending,
+                                            keyboardType: TextInputType.number,
+                                            decoration: _inputDecoration('e.g. 50000'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text('DD Issue Date', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                          const SizedBox(height: 6),
+                                          TextFormField(
+                                            controller: _ddDateController,
+                                            enabled: !_isSending,
+                                            decoration: _inputDecoration('YYYY-MM-DD'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: (_isSending || _isUploadingDD) ? null : _pickDDFile,
+                                      icon: _isUploadingDD
+                                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                          : const Icon(Icons.upload_file, size: 18),
+                                      label: Text(_isUploadingDD ? 'Uploading...' : 'Select DD Scanned Copy'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF1A237E),
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    if (_ddFileName != null)
+                                      Expanded(
+                                        child: Text(
+                                          '✓ Attached: $_ddFileName',
+                                          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                if (_ddUploadError != null) ...[
+                                  const SizedBox(height: 6),
+                                  Text(_ddUploadError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ] else ...[
                         // Guest Form Fields
                         Row(

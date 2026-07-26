@@ -5,6 +5,7 @@ import 'enquiry_dialog.dart';
 import '../services/api_service.dart';
 import '../pages/live_auction_page.dart';
 import '../utils/date_utils.dart';
+import '../utils/number_to_words.dart';
 
 // ─── Dashboard Homepage Section (shows 4 latest rooms) ────────────────────────
 
@@ -198,6 +199,10 @@ class AuctionCard extends StatefulWidget {
   final String qty;
   final String roomId;
   final String status;      // 'upcoming' | 'live' | 'ended' | 'draft'
+  final String visibility;
+  final bool isDelivered;
+  final bool isApproved;
+  final bool isTester;
 
   const AuctionCard({
     super.key,
@@ -209,6 +214,10 @@ class AuctionCard extends StatefulWidget {
     required this.qty,
     required this.roomId,
     required this.status,
+    this.visibility = 'public',
+    this.isDelivered = false,
+    this.isApproved = false,
+    this.isTester = false,
   });
 
   /// Build an AuctionCard from the API response map
@@ -220,9 +229,13 @@ class AuctionCard extends StatefulWidget {
         : 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80';
 
     final visibility = room['visibility']?.toString() ?? 'public';
+    final isDelivered = room['is_delivered'] == true;
+    final isApproved = room['is_approved'] == true;
+    final isTester = room['is_tester'] == true;
+
     String type;
     if (visibility == 'members_only') {
-      type = 'Private Auction';
+      type = (isApproved || isTester) ? 'Private (Member)' : '🔒 Private (Approval Required)';
     } else if (visibility == 'hidden') {
       type = 'Restricted';
     } else {
@@ -240,15 +253,24 @@ class AuctionCard extends StatefulWidget {
       }
     } catch (_) {}
 
+    final rawQty = item?['quantity']?.toString() ?? '';
+    final qtyDisplay = (visibility == 'members_only' && !isApproved && !isTester)
+        ? '🔒 Approval Required'
+        : rawQty;
+
     return AuctionCard(
       title: room['title']?.toString() ?? 'Untitled Auction',
       imageUrl: imageUrl,
       type: type,
       startTime: startTime,
       endTime: endTime,
-      qty: item?['quantity']?.toString() ?? '',
+      qty: qtyDisplay,
       roomId: room['id']?.toString() ?? '',
       status: room['status']?.toString() ?? 'upcoming',
+      visibility: visibility,
+      isDelivered: isDelivered,
+      isApproved: isApproved,
+      isTester: isTester,
     );
   }
 
@@ -358,7 +380,7 @@ class _AuctionCardState extends State<AuctionCard> {
                         _infoRow('Auction Type', widget.type, isBadge: true),
                         _infoRow('Start Time', _formatDateTime(widget.startTime)),
                         _infoRow('End Time', _formatDateTime(widget.endTime)),
-                        if (widget.qty.isNotEmpty) _infoRow('Quantity', widget.qty),
+                        if (widget.qty.isNotEmpty) _infoRow('Quantity', formatQuantityWithWords(widget.qty)),
                       ],
                     ),
                   ),
@@ -547,8 +569,18 @@ class AuctionDetailDialog {
             final description = room['description']?.toString() ?? item?['description']?.toString() ?? 'No description available.';
             final start = room['scheduled_start'] != null ? DateTimeUtils.parseUtc(room['scheduled_start'].toString()) : null;
             final end = room['scheduled_end'] != null ? DateTimeUtils.parseUtc(room['scheduled_end'].toString()) : null;
+            final visibility = room['visibility']?.toString() ?? 'public';
+            final isApproved = room['is_approved'] == true;
+            final isTester = room['is_tester'] == true;
+            final isDelivered = room['is_delivered'] == true;
+            final isLocked = (visibility == 'members_only' && !isApproved && !isTester);
+
             final minBid = item?['min_bid'] ?? 0;
             final minRaise = item?['min_raise'] ?? 0;
+            final minBidStr = isLocked ? '🔒 Available upon Approval' : '₹$minBid';
+            final minRaiseStr = isLocked ? '🔒 Available upon Approval' : '₹$minRaise';
+            final qtyStr = isLocked ? '🔒 Available upon Approval' : formatQuantityWithWords(item?['quantity']);
+            final deliveryStr = isDelivered ? '✅ Item Delivered' : (room['status'] == 'ended' ? '🚚 Delivery Pending' : 'Not Applicable');
 
             final df = DateFormat('dd MMM yyyy hh:mm a');
 
@@ -588,11 +620,14 @@ class AuctionDetailDialog {
                     ),
                     const SizedBox(height: 20),
                     _detailRow('Status', room['status']?.toString().toUpperCase() ?? 'UPCOMING'),
+                    _detailRow('Visibility', visibility == 'members_only' ? '🔒 Private (Members Only)' : 'Public'),
+                    _detailRow('Quantity', qtyStr),
                     _detailRow('Scheduled Start', start != null ? df.format(start) : 'TBD'),
                     _detailRow('Scheduled End', end != null ? df.format(end) : 'TBD'),
-                    _detailRow('Minimum Bid / Base Price', '₹$minBid'),
-                    _detailRow('Minimum Raise Increment', '₹$minRaise'),
+                    _detailRow('Minimum Bid / Base Price', minBidStr),
+                    _detailRow('Minimum Raise Increment', minRaiseStr),
                     _detailRow('Location', item?['location'] ?? 'Not Specified'),
+                    if (room['status'] == 'ended') _detailRow('Delivery Status', deliveryStr),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
