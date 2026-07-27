@@ -131,7 +131,7 @@ class LoginDialog {
                                             GeminiInfoDialog.show(
                                               context,
                                               'Login Success',
-                                              'Welcome back! You have successfully logged into Seal The Deal. You can now participate in auctions and manage your profile.',
+                                              'Welcome back! You have successfully logged into Slick Salvage. You can now participate in auctions and manage your profile.',
                                             );
                                           }
                                         } else {

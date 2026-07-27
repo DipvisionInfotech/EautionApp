@@ -297,7 +297,7 @@ class ContactUsPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Seal The Deal', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('Slick Salvage', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                 Text('Streamlining Salvage', style: TextStyle(color: Colors.white70, fontSize: 12)),
               ],
             ),

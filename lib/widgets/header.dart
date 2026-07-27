@@ -379,9 +379,7 @@ class _HeaderState extends State<Header> {
                   height: 40,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [Colors.blue, Colors.green, Colors.yellow],
-                    ),
+                    color: Color(0xFF0288D1),
                   ),
                   child: const Icon(Icons.handshake, color: Colors.white, size: 20),
                 ),
@@ -390,7 +388,7 @@ class _HeaderState extends State<Header> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Seal The Deal',
+                      'Slick Salvage',
                       style: TextStyle(
                         fontSize: screenWidth > 600 ? 20 : 16,
                         fontWeight: FontWeight.bold,

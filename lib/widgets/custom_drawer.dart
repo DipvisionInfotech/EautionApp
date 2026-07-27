@@ -47,7 +47,7 @@ class _CustomDrawerState extends State<CustomDrawer> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  'Seal The Deal',
+                  'Slick Salvage',
                   style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                 ),
                 Text(

@@ -98,7 +98,7 @@ class AboutUsPage extends StatelessWidget {
         ),
         SizedBox(height: 20),
         Text(
-          'We at Seal The Deal are a group of professionals from different sectors (including Salvaging, Marketing, Sales, Human Resource) with minimum 5-7 years of experience who have envisaged and have come together to improve and improvise the process of salvaging.',
+          'We at Slick Salvage are a group of professionals from different sectors (including Salvaging, Marketing, Sales, Human Resource) with minimum 5-7 years of experience who have envisaged and have come together to improve and improvise the process of salvaging.',
           style: TextStyle(fontSize: 16, height: 1.6),
         ),
       ],
@@ -110,7 +110,7 @@ class AboutUsPage extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Our operations team is the heart of the company who have at least 5-7 years’ experience in devising the terms and conditions of the e-Auction and take care of all the documentation part. We, at Seal The Deal understand that the terms and conditions of the e-Auction is the most important part of salvaging and it is made stringently such that there are minimal deviations.',
+          'Our operations team is the heart of the company who have at least 5-7 years’ experience in devising the terms and conditions of the e-Auction and take care of all the documentation part. We, at Slick Salvage understand that the terms and conditions of the e-Auction is the most important part of salvaging and it is made stringently such that there are minimal deviations.',
           style: TextStyle(fontSize: 16, height: 1.6),
         ),
         SizedBox(height: 20),
@@ -148,7 +148,7 @@ class AboutUsPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('Seal The Deal', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+                Text('Slick Salvage', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
                 Text('Streamlining Salvage', style: TextStyle(color: Colors.white70, fontSize: 12)),
               ],
             ),

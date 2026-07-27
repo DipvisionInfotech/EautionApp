@@ -213,17 +213,17 @@ class Footer extends StatelessWidget {
           _discoverItem(
             context,
             'e-Auction',
-            'About Seal The Deal e-Auctions\n\nSeal The Deal is a premier online marketplace specializing in forward e-Auctions for insurance salvage, commercial assets, and industrial disposal. We connect insurance companies and corporate clients with certified buyers to ensure high realization value and transparency in disposal.\n\nKey Advantages of Seal The Deal\n\nWe provide a secure, audited bidding platform with real-time bidding updates, automated credential management, and detailed ledger trails. Bidders can participate in auctions from anywhere in India with full transparency.',
+            'About Slick Salvage e-Auctions\n\nSlick Salvage is a premier online marketplace specializing in forward e-Auctions for insurance salvage, commercial assets, and industrial disposal. We connect insurance companies and corporate clients with certified buyers to ensure high realization value and transparency in disposal.\n\nKey Advantages of Slick Salvage\n\nWe provide a secure, audited bidding platform with real-time bidding updates, automated credential management, and detailed ledger trails. Bidders can participate in auctions from anywhere in India with full transparency.',
           ),
           _discoverItem(
             context,
             'Salvage Services',
-            'Commercial Liquidations & Salvage Sales\n\nSeal The Deal provides comprehensive disposal services for a wide variety of salvage, including automobiles, machinery, metals, electronics, and warehouse stock. We handle the entire cataloging, bidding interest verification, and document collection process.\n\nOur Services:\n\n* Audited transparent bidding rooms\n* KYC-verified buyer network\n* Automated bidder verification and approval\n* Quick payout and delivery tracking for sellers',
+            'Commercial Liquidations & Salvage Sales\n\nSlick Salvage provides comprehensive disposal services for a wide variety of salvage, including automobiles, machinery, metals, electronics, and warehouse stock. We handle the entire cataloging, bidding interest verification, and document collection process.\n\nOur Services:\n\n* Audited transparent bidding rooms\n* KYC-verified buyer network\n* Automated bidder verification and approval\n* Quick payout and delivery tracking for sellers',
           ),
           _discoverItem(
             context,
             'Bidding Rules',
-            'Seal The Deal Bidding Guidelines\n\nTo maintain the integrity of our marketplace, all participants must follow our bidding rules:\n\n* KYC Verification: All buyers must complete their profile and submit valid identity proof (Aadhaar/PAN) for admin review.\n* Registration Fee: Certain auctions require a refundable or adjustable registration fee to filter serious participants.\n* Atomic Bidding: All bids are processed atomically through our real-time engine to prevent overlaps or ghost bids.\n* Binding Offers: Every bid placed is a legally binding commitment to purchase the asset at the specified value.',
+            'Slick Salvage Bidding Guidelines\n\nTo maintain the integrity of our marketplace, all participants must follow our bidding rules:\n\n* KYC Verification: All buyers must complete their profile and submit valid identity proof (Aadhaar/PAN) for admin review.\n* Registration Fee: Certain auctions require a refundable or adjustable registration fee to filter serious participants.\n* Atomic Bidding: All bids are processed atomically through our real-time engine to prevent overlaps or ghost bids.\n* Binding Offers: Every bid placed is a legally binding commitment to purchase the asset at the specified value.',
           ),
         ],
       ),

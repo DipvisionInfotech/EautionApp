@@ -111,7 +111,7 @@ class _RegisterPageState extends State<RegisterPage> {
           if (!mounted) return;
           setState(() => _isRegistering = false);
 
-          String infoMsg = 'Thank you for registering with Seal The Deal!\n\nYour account has been created successfully and you are securely logged in.';
+          String infoMsg = 'Thank you for registering with Slick Salvage!\n\nYour account has been created successfully and you are securely logged in.';
           if (_docFile != null) {
             if (uploadSuccess) {
               infoMsg += '\n\nYour KYC document ($_docType) has been uploaded successfully for admin review.';
