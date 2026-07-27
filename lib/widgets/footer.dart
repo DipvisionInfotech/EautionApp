@@ -48,13 +48,13 @@ class Footer extends StatelessWidget {
           if (isMobile)
             const Column(
               children: [
-                Text('© Copyright 2026 Sealthedeal. All rights reserved.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Text('© Copyright 2026 Slick Salvage. All rights reserved.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
               ],
             )
           else
             const Row(
               children: [
-                Expanded(child: Text('© Copyright 2026 Sealthedeal. All rights reserved.', style: TextStyle(color: Colors.grey, fontSize: 12))),
+                Expanded(child: Text('© Copyright 2026 Slick Salvage. All rights reserved.', style: TextStyle(color: Colors.grey, fontSize: 12))),
               ],
             ),
         ],
@@ -101,7 +101,7 @@ class Footer extends StatelessWidget {
           onTap: () => GeminiInfoDialog.show(
             context,
             'Terms & Condition',
-            'Terms and Conditions\n\nWelcome to Sealthedeal. By accessing this website, you agree to comply with and be bound by the following terms and conditions of use. The content of the pages of this website is for your general information and use only. It is subject to change without notice.\n\nYour use of any information or materials on this website is entirely at your own risk, for which we shall not be liable. It shall be your own responsibility to ensure that any products, services or information available through this website meet your specific requirements.\n\nUnauthorized use of this website may give rise to a claim for damages and/or be a criminal offense.',
+            'Terms and Conditions\n\nWelcome to Slick Salvage. By accessing this website, you agree to comply with and be bound by the following terms and conditions of use. The content of the pages of this website is for your general information and use only. It is subject to change without notice.\n\nYour use of any information or materials on this website is entirely at your own risk, for which we shall not be liable. It shall be your own responsibility to ensure that any products, services or information available through this website meet your specific requirements.\n\nUnauthorized use of this website may give rise to a claim for damages and/or be a criminal offense.',
           ),
         ),
         _footerLink(
@@ -110,7 +110,7 @@ class Footer extends StatelessWidget {
           onTap: () => GeminiInfoDialog.show(
             context,
             'Privacy Policy',
-            'Privacy Policy\n\nYour privacy is important to us. It is Sealthedeal\'s policy to respect your privacy regarding any information we may collect from you across our website. We only ask for personal information when we truly need it to provide a service to you. We collect it by fair and lawful means, with your knowledge and consent.\n\nWe don’t share any personally identifying information publicly or with third-parties, except when required to by law. Our website may link to external sites that are not operated by us. Please be aware that we have no control over the content and practices of these sites.',
+            'Privacy Policy\n\nYour privacy is important to us. It is Slick Salvage\'s policy to respect your privacy regarding any information we may collect from you across our website. We only ask for personal information when we truly need it to provide a service to you. We collect it by fair and lawful means, with your knowledge and consent.\n\nWe don’t share any personally identifying information publicly or with third-parties, except when required to by law. Our website may link to external sites that are not operated by us. Please be aware that we have no control over the content and practices of these sites.',
           ),
         ),
       ],
@@ -123,13 +123,13 @@ class Footer extends StatelessWidget {
       children: [
         const Text('Contact Us', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 20),
-        _contactItem(context, Icons.location_on, 'Delhi Office - Kings Mall, Office No. 2, 5th Floor, Rohini Sector 10, New Delhi - 110085'),
+        _contactItem(context, Icons.business, 'Slick Salvage LLP'),
         const SizedBox(height: 15),
-        _contactItem(context, Icons.location_on, 'Mumbai office - Haware Infotech Park, Office No: 1108, 11th Floor, Sector 30A, Vashi, Navi Mumbai, Maharashtra - 400703.'),
+        _contactItem(context, Icons.location_on, 'SLICK SALVAGE LLP HOUSE NO 1/A KH. NO. 31/9, G/F, BLK-D, DEEP VIHAR, Badli (North West Delhi), ROHINI SECTOR 24, Delhi, North West Delhi- 110042, Delhi, India'),
         const SizedBox(height: 15),
         _contactItem(context, Icons.phone, '9709709992'),
         const SizedBox(height: 15),
-        _contactItem(context, Icons.email, 'info@sealthedeal.co.in'),
+        _contactItem(context, Icons.email, 'info@slicksalvage.com'),
       ],
     );
   }

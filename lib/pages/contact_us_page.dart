@@ -126,27 +126,11 @@ class ContactUsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Registration Office', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text('Slick Salvage LLP Head Office', style: TextStyle(fontWeight: FontWeight.bold)),
                   SizedBox(height: 5),
-                  Text('Kings Mall, Office No. 2, 5th Floor, Rohini Sector 10, New Delhi - 110085'),
-                ],
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 30),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.business, size: 20),
-            SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Mumbai office', style: TextStyle(fontWeight: FontWeight.bold)),
-                  SizedBox(height: 5),
-                  Text('Haware Infotech Park, Office No: 1108, 11th Floor, Sector 30A, Vashi, Navi Mumbai, Maharashtra - 400703.'),
+                  Text('SLICK SALVAGE LLP HOUSE NO 1/A KH. NO. 31/9, G/F, BLK-D, DEEP VIHAR, Badli (North West Delhi), ROHINI SECTOR 24, Delhi, North West Delhi- 110042, Delhi, India'),
+                  SizedBox(height: 10),
+                  Text('Email: info@slicksalvage.com', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF0288D1))),
                 ],
               ),
             ),

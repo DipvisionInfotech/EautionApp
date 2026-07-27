@@ -11,7 +11,7 @@ class InfoSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Sealthedeal is an online platform that offers a wide range of scrap materials for sale through e-auctions. Our company is committed to providing a transparent and convenient way for buyers to purchase scrap materials from various industries, Power Generating Companies, and more.',
+            'Slick Salvage is an online platform that offers a wide range of scrap materials for sale through e-auctions. Our company is committed to providing a transparent and convenient way for buyers to purchase scrap materials from various industries, Power Generating Companies, and more.',
             style: TextStyle(fontSize: 14, color: Colors.black87),
           ),
           SizedBox(height: 15),
