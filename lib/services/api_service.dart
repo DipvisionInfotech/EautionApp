@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,6 +12,20 @@ class ApiService {
   static const String baseUrl = (kDebugMode && useLocalHostInDebug)
       ? (kIsWeb ? 'http://127.0.0.1:8000/api' : 'http://10.0.2.2:8000/api')
       : 'https://eauction-backend.dipvisioninfotech.com/api';
+
+  static MediaType _getMediaType(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.pdf')) {
+      return MediaType('application', 'pdf');
+    } else if (lower.endsWith('.png')) {
+      return MediaType('image', 'png');
+    } else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) {
+      return MediaType('image', 'jpeg');
+    } else if (lower.endsWith('.webp')) {
+      return MediaType('image', 'webp');
+    }
+    return MediaType('application', 'octet-stream');
+  }
 
   static Future<void> saveTokens(String access, String refresh) async {
     final prefs = await SharedPreferences.getInstance();
@@ -153,6 +168,7 @@ class ApiService {
     if (token == null) return {'success': false, 'error': 'No token'};
 
     try {
+      final mediaType = _getMediaType(fileName);
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('$baseUrl/kyc/submit/'),
@@ -163,6 +179,7 @@ class ApiService {
         'file',
         fileBytes,
         filename: fileName,
+        contentType: mediaType,
       ));
 
       var streamedResponse = await request.send();
@@ -182,6 +199,7 @@ class ApiService {
               'file',
               fileBytes,
               filename: fileName,
+              contentType: mediaType,
             ));
             streamedResponse = await request.send();
             response = await http.Response.fromStream(streamedResponse);
@@ -281,6 +299,29 @@ class ApiService {
       return {'success': true, 'data': jsonDecode(response.body)};
     } else {
       return {'success': false, 'error': jsonDecode(response.body)};
+    }
+  }
+
+  static Future<Map<String, dynamic>> getGroupCategories(String roomId) async {
+    final token = await getAccessToken();
+    final headers = {'Content-Type': 'application/json'};
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/rooms/$roomId/group-categories/'),
+        headers: headers,
+      );
+
+      if (response.statusCode == 200) {
+        return {'success': true, 'data': jsonDecode(response.body)};
+      } else {
+        return {'success': false, 'error': jsonDecode(response.body)};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
     }
   }
 
