@@ -45,6 +45,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
 
   bool _isSending = false;
   bool _isLoggedIn = false;
+  bool _isKycVerified = true;
   String _loggedInName = '';
   String _loggedInEmail = '';
   String _loggedInPhone = '';
@@ -72,6 +73,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
       if (profile['success'] == true && mounted) {
         setState(() {
           _isLoggedIn = true;
+          _isKycVerified = profile['data']['kyc_verified'] == true;
           _loggedInName = profile['data']['full_name'] ?? '';
           _loggedInEmail = profile['data']['email'] ?? '';
           _loggedInPhone = profile['data']['phone'] ?? '';
@@ -89,6 +91,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
       if (mounted) {
         setState(() {
           _isLoggedIn = false;
+          _isKycVerified = false;
           _requestType = 'query'; // Guests can only send queries
         });
       }
@@ -356,6 +359,33 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                             ],
                           ),
                         ),
+                        if (_isLoggedIn && _requestType == 'bidding' && !_isKycVerified)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFFDE68A)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 20),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'KYC Verification Pending: Your account is not yet verified. Please ensure your KYC documents are approved before submitting bidding participation requests.',
+                                    style: TextStyle(
+                                      color: Color(0xFF92400E),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         if (_requestType == 'bidding') ...[
                           Container(
                             padding: const EdgeInsets.all(16),
