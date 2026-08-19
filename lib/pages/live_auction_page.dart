@@ -372,27 +372,58 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     setState(() => _isLoading = true);
 
-    final result = await ApiService.ephemeralLogin(email, password);
+    final result = await ApiService.ephemeralLogin(email, password, roomId: widget.roomId);
 
     if (result['success'] == true) {
+      final sessionRoomId = result['roomId']?.toString() ?? '';
+
+      // Check if session room matches the current room or one of group categories
+      final bool isAllowed = sessionRoomId == widget.roomId ||
+          _categories.any((c) => c['id']?.toString() == sessionRoomId);
+
+      if (!isAllowed) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('These credentials are not authorized for this auction room.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
       setState(() => _isAuthenticated = true);
-      // Connect all category rooms
+
+      // Connect WebSocket ONLY for the authorized category room
       for (var cat in _categories) {
         final rId = cat['id']?.toString() ?? '';
-        if (rId.isNotEmpty) {
+        if (rId == sessionRoomId || (sessionRoomId.isEmpty && rId == widget.roomId)) {
           _connectSingleRoomWebSocket(rId, result['token']);
         }
       }
     } else {
-      // Try standard admin/seller/tester login
-      final standardResult = await ApiService.login(email, password);
-      if (standardResult['success'] == true) {
-        await _connectAllRoomsAsPrivileged();
-        return;
+      // If error was 403 or specific auth error, display it immediately
+      final dynamic rawError = result['error'];
+      String errorMsg = '';
+      if (rawError is Map && rawError['error'] != null) {
+        errorMsg = rawError['error'].toString();
+      } else if (rawError is String) {
+        errorMsg = rawError;
+      }
+
+      // If user might be an admin/seller entering standard account credentials
+      if (!email.contains('@auction.internal')) {
+        final standardResult = await ApiService.login(email, password);
+        if (standardResult['success'] == true) {
+          await _connectAllRoomsAsPrivileged();
+          return;
+        }
       }
 
       setState(() => _isLoading = false);
-      final errorMsg = result['error']?['error'] ?? 'Invalid credentials or room access expired.';
+      if (errorMsg.isEmpty) {
+        errorMsg = 'Invalid credentials or room access expired.';
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
       );

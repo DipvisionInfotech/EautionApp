@@ -637,15 +637,20 @@ class ApiService {
   }
 
   // Ephemeral Bidding Session Login
-  static Future<Map<String, dynamic>> ephemeralLogin(String email, String password) async {
+  static Future<Map<String, dynamic>> ephemeralLogin(String email, String password, {String? roomId}) async {
     try {
+      final body = <String, dynamic>{
+        'email': email,
+        'password': password,
+      };
+      if (roomId != null && roomId.isNotEmpty) {
+        body['room_id'] = roomId;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/auth/ephemeral-login/'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': email,
-          'password': password,
-        }),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200) {
@@ -660,7 +665,7 @@ class ApiService {
         return {'success': false, 'error': jsonDecode(response.body)};
       }
     } catch (e) {
-      return {'success': false, 'error': 'Network error'};
+      return {'success': false, 'error': {'error': 'Network error'}};
     }
   }
 
