@@ -176,7 +176,7 @@ class _HeaderState extends State<Header> {
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF8FAFC),
-                            border: Border.Border.all(color: const Color(0xFFE2E8F0)),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
@@ -285,7 +285,7 @@ class _HeaderState extends State<Header> {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF0FDF4),
-                            border: Border.Border.all(color: const Color(0xFFBBF7D0)),
+                            border: Border.all(color: const Color(0xFFBBF7D0)),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Row(
@@ -334,7 +334,7 @@ class _HeaderState extends State<Header> {
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: const Color(0xFFEFF6FF),
-                              border: Border.Border.all(color: const Color(0xFF93C5FD)),
+                              border: Border.all(color: const Color(0xFF93C5FD)),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Column(
