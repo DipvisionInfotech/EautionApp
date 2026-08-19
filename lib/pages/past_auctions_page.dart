@@ -4,6 +4,7 @@ import '../widgets/footer.dart';
 import '../widgets/auction_section.dart';
 import '../services/api_service.dart';
 import '../widgets/custom_drawer.dart';
+import '../utils/number_to_words.dart';
 
 class PastAuctionsPage extends StatefulWidget {
   const PastAuctionsPage({super.key});
@@ -167,6 +168,7 @@ class _PastAuctionsPageState extends State<PastAuctionsPage> {
 
     final title = room['title']?.toString() ?? 'Untitled Auction';
     final qty = item?['quantity']?.toString() ?? '';
+    final unit = item?['unit']?.toString() ?? '';
     final minBid = item?['min_bid'] ?? 0;
     
     final finalPrice = room['winner']?['bid_amount'] ?? room['current_bid'] ?? minBid;
@@ -216,7 +218,7 @@ class _PastAuctionsPageState extends State<PastAuctionsPage> {
                         _infoRow('Status', room['status']?.toString().toUpperCase() ?? 'ENDED', isBadge: true, isWinner: isUserWinner),
                         _infoRow('Base Price', '₹$minBid'),
                         _infoRow('Final Price', '₹$finalPrice'),
-                        if (qty.isNotEmpty) _infoRow('Quantity', qty),
+                        if (qty.isNotEmpty) _infoRow('Quantity', formatQuantityWithWords(qty, unit)),
                       ],
                     ),
                   ),

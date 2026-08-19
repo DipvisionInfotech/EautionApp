@@ -197,12 +197,15 @@ class AuctionCard extends StatefulWidget {
   final DateTime? startTime;
   final DateTime? endTime;
   final String qty;
+  final String unit;
   final String roomId;
   final String status;      // 'upcoming' | 'live' | 'ended' | 'draft'
   final String visibility;
   final bool isDelivered;
   final bool isApproved;
   final bool isTester;
+  final bool isEmdRequired;
+  final double emdAmount;
 
   const AuctionCard({
     super.key,
@@ -212,12 +215,15 @@ class AuctionCard extends StatefulWidget {
     this.startTime,
     this.endTime,
     required this.qty,
+    this.unit = '',
     required this.roomId,
     required this.status,
     this.visibility = 'public',
     this.isDelivered = false,
     this.isApproved = false,
     this.isTester = false,
+    this.isEmdRequired = false,
+    this.emdAmount = 0.0,
   });
 
   /// Build an AuctionCard from the API response map
@@ -254,6 +260,11 @@ class AuctionCard extends StatefulWidget {
     } catch (_) {}
 
     final rawQty = item?['quantity']?.toString() ?? '';
+    final rawUnit = item?['unit']?.toString() ?? '';
+    final regFee = room['registration_fee'] as Map<String, dynamic>?;
+    final isEmdRequired = regFee?['required'] == true;
+    final emdAmount = double.tryParse(regFee?['amount']?.toString() ?? '') ?? 0.0;
+
     final qtyDisplay = (visibility == 'members_only' && !isApproved && !isTester)
         ? '🔒 Approval Required'
         : rawQty;
@@ -265,12 +276,15 @@ class AuctionCard extends StatefulWidget {
       startTime: startTime,
       endTime: endTime,
       qty: qtyDisplay,
+      unit: rawUnit,
       roomId: room['id']?.toString() ?? '',
       status: room['status']?.toString() ?? 'upcoming',
       visibility: visibility,
       isDelivered: isDelivered,
       isApproved: isApproved,
       isTester: isTester,
+      isEmdRequired: isEmdRequired,
+      emdAmount: emdAmount,
     );
   }
 
@@ -380,7 +394,7 @@ class _AuctionCardState extends State<AuctionCard> {
                         _infoRow('Auction Type', widget.type, isBadge: true),
                         _infoRow('Start Time', _formatDateTime(widget.startTime)),
                         _infoRow('End Time', _formatDateTime(widget.endTime)),
-                        if (widget.qty.isNotEmpty) _infoRow('Quantity', formatQuantityWithWords(widget.qty)),
+                        if (widget.qty.isNotEmpty) _infoRow('Quantity', formatQuantityWithWords(widget.qty, widget.unit)),
                       ],
                     ),
                   ),
@@ -460,7 +474,13 @@ class _AuctionCardState extends State<AuctionCard> {
                                   ),
                                 );
                               } else {
-                                EnquiryDialog.show(context, widget.title, auctionId: widget.roomId);
+                                EnquiryDialog.show(
+                                  context,
+                                  widget.title,
+                                  auctionId: widget.roomId,
+                                  isEmdRequired: widget.isEmdRequired,
+                                  emdAmount: widget.emdAmount,
+                                );
                               }
                             },
                             isExtraSmall,
@@ -579,7 +599,12 @@ class AuctionDetailDialog {
             final minRaise = item?['min_raise'] ?? 0;
             final minBidStr = isLocked ? '🔒 Available upon Approval' : '₹$minBid';
             final minRaiseStr = isLocked ? '🔒 Available upon Approval' : '₹$minRaise';
-            final qtyStr = isLocked ? '🔒 Available upon Approval' : formatQuantityWithWords(item?['quantity']);
+            final rawUnit = item?['unit']?.toString() ?? '';
+            final regFee = room['registration_fee'] as Map<String, dynamic>?;
+            final isEmdRequired = regFee?['required'] == true;
+            final emdAmount = double.tryParse(regFee?['amount']?.toString() ?? '') ?? 0.0;
+            final emdStr = isEmdRequired ? '₹${emdAmount.toStringAsFixed(0)} (Mandatory)' : 'Not Required (Free)';
+            final qtyStr = isLocked ? '🔒 Available upon Approval' : formatQuantityWithWords(item?['quantity'], rawUnit);
             final deliveryStr = isDelivered ? '✅ Item Delivered' : (room['status'] == 'ended' ? '🚚 Delivery Pending' : 'Not Applicable');
 
             final df = DateFormat('dd MMM yyyy hh:mm a');
@@ -622,6 +647,7 @@ class AuctionDetailDialog {
                     _detailRow('Status', room['status']?.toString().toUpperCase() ?? 'UPCOMING'),
                     _detailRow('Visibility', visibility == 'members_only' ? '🔒 Private (Members Only)' : 'Public'),
                     _detailRow('Quantity', qtyStr),
+                    _detailRow('EMD / Registration Fee', emdStr),
                     _detailRow('Scheduled Start', start != null ? df.format(start) : 'TBD'),
                     _detailRow('Scheduled End', end != null ? df.format(end) : 'TBD'),
                     _detailRow('Minimum Bid / Base Price', minBidStr),

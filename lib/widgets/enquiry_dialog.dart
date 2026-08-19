@@ -8,21 +8,34 @@ class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
   final String? auctionId;  // Can be auction room ID or classified item ID
   final bool isClassified;
+  final bool isEmdRequired;
+  final double emdAmount;
 
   const EnquiryDialog({
     super.key, 
     required this.auctionTitle,
     this.auctionId,
     this.isClassified = false,
+    this.isEmdRequired = false,
+    this.emdAmount = 0.0,
   });
 
-  static void show(BuildContext context, String auctionTitle, {String? auctionId, bool isClassified = false}) {
+  static void show(
+    BuildContext context, 
+    String auctionTitle, {
+    String? auctionId, 
+    bool isClassified = false,
+    bool isEmdRequired = false,
+    double emdAmount = 0.0,
+  }) {
     showDialog(
       context: context,
       builder: (context) => EnquiryDialog(
         auctionTitle: auctionTitle,
         auctionId: auctionId,
         isClassified: isClassified,
+        isEmdRequired: isEmdRequired,
+        emdAmount: emdAmount,
       ),
     );
   }
@@ -387,122 +400,163 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                             ),
                           ),
                         if (_requestType == 'bidding') ...[
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            margin: const EdgeInsets.only(bottom: 20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F9FF),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFBAE6FD)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'EMD Demand Draft (DD) Details',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A237E)),
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('DD Number', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                                          const SizedBox(height: 6),
-                                          TextFormField(
-                                            controller: _ddNumberController,
-                                            enabled: !_isSending,
-                                            decoration: _inputDecoration('e.g. 654321'),
+                          if (widget.isEmdRequired) ...[
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0F9FF),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFBAE6FD)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'EMD Demand Draft (DD) Details',
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A237E)),
+                                      ),
+                                      if (widget.emdAmount > 0)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF0284C7).withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(4),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('Issuing Bank Name', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                                          const SizedBox(height: 6),
-                                          TextFormField(
-                                            controller: _ddBankController,
-                                            enabled: !_isSending,
-                                            decoration: _inputDecoration('e.g. State Bank of India'),
+                                          child: Text(
+                                            'Required: ₹${widget.emdAmount.toStringAsFixed(0)}',
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF0284C7)),
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('DD Amount (₹)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                                          const SizedBox(height: 6),
-                                          TextFormField(
-                                            controller: _ddAmountController,
-                                            enabled: !_isSending,
-                                            keyboardType: TextInputType.number,
-                                            decoration: _inputDecoration('e.g. 50000'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          const Text('DD Issue Date', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
-                                          const SizedBox(height: 6),
-                                          TextFormField(
-                                            controller: _ddDateController,
-                                            enabled: !_isSending,
-                                            decoration: _inputDecoration('YYYY-MM-DD'),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    ElevatedButton.icon(
-                                      onPressed: (_isSending || _isUploadingDD) ? null : _pickDDFile,
-                                      icon: _isUploadingDD
-                                          ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                          : const Icon(Icons.upload_file, size: 18),
-                                      label: Text(_isUploadingDD ? 'Uploading...' : 'Select DD Scanned Copy'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF1A237E),
-                                        foregroundColor: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    if (_ddFileName != null)
+                                        ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
                                       Expanded(
-                                        child: Text(
-                                          '✓ Attached: $_ddFileName',
-                                          style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
-                                          overflow: TextOverflow.ellipsis,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('DD Number', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                            const SizedBox(height: 6),
+                                            TextFormField(
+                                              controller: _ddNumberController,
+                                              enabled: !_isSending,
+                                              decoration: _inputDecoration('e.g. 654321'),
+                                            ),
+                                          ],
                                         ),
                                       ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('Issuing Bank Name', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                            const SizedBox(height: 6),
+                                            TextFormField(
+                                              controller: _ddBankController,
+                                              enabled: !_isSending,
+                                              decoration: _inputDecoration('e.g. State Bank of India'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('DD Amount (₹)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                            const SizedBox(height: 6),
+                                            TextFormField(
+                                              controller: _ddAmountController,
+                                              enabled: !_isSending,
+                                              keyboardType: TextInputType.number,
+                                              decoration: _inputDecoration('e.g. 50000'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text('DD Issue Date', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12)),
+                                            const SizedBox(height: 6),
+                                            TextFormField(
+                                              controller: _ddDateController,
+                                              enabled: !_isSending,
+                                              decoration: _inputDecoration('YYYY-MM-DD'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Row(
+                                    children: [
+                                      ElevatedButton.icon(
+                                        onPressed: (_isSending || _isUploadingDD) ? null : _pickDDFile,
+                                        icon: _isUploadingDD
+                                            ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                            : const Icon(Icons.upload_file, size: 18),
+                                        label: Text(_isUploadingDD ? 'Uploading...' : 'Select DD Scanned Copy'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF1A237E),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      if (_ddFileName != null)
+                                        Expanded(
+                                          child: Text(
+                                            '✓ Attached: $_ddFileName',
+                                            style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                  if (_ddUploadError != null) ...[
+                                    const SizedBox(height: 6),
+                                    Text(_ddUploadError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
                                   ],
-                                ),
-                                if (_ddUploadError != null) ...[
-                                  const SizedBox(height: 6),
-                                  Text(_ddUploadError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
+                          ] else ...[
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.check_circle_outline, color: Color(0xFF059669), size: 18),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'No EMD / Registration Fee is required for this auction. You can submit your interest directly.',
+                                      style: TextStyle(color: Color(0xFF065F46), fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ] else ...[
                         // Guest Form Fields

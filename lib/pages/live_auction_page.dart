@@ -21,66 +21,105 @@ class LiveAuctionPage extends StatefulWidget {
 }
 
 class _LiveAuctionPageState extends State<LiveAuctionPage> {
-  WebSocketChannel? _channel;
   bool _isLoading = false;
   bool _isAuthenticated = false;
   bool _isSpectator = false;      // True for admin role → read-only mode
   String? _errorMessage;
   String? _userRole;              // Cached role for this session
   Timer? _countdownTimer;
-  Map<String, dynamic>? _roomDetails;
 
-  // Auction State
-  double _currentBid = 0.0;
-  int _bidderCount = 0;
-  int _timeRemainingSec = 0;
-  bool _auctionEnded = false;
-  String? _winnerAlias;
-  double? _winningBid;
+  // Group Auction State
+  String? _groupId;
+  String? _groupTitle;
+  List<Map<String, dynamic>> _categories = [];
+  String _selectedCategoryRoomId = ''; // '' or 'all' means "All Categories"
+  final Map<String, Map<String, dynamic>> _roomStates = {};
+  final Map<String, WebSocketChannel> _roomChannels = {};
 
-  // Bid History list for UI
-  final List<Map<String, dynamic>> _bidHistory = [];
-
-  final TextEditingController _bidController = TextEditingController();
+  // Auth Inputs
   final TextEditingController _tempEmailController = TextEditingController();
   final TextEditingController _tempPasswordController = TextEditingController();
+  String? _authenticatedUserAlias;
 
   @override
   void initState() {
     super.initState();
-    _fetchRoomDetails();
-    _checkRoleAndAutoConnect();
+    _selectedCategoryRoomId = widget.roomId;
+    _fetchGroupCategoriesAndInit();
   }
 
-  Future<void> _fetchRoomDetails() async {
-    final result = await ApiService.getRoomDetails(widget.roomId);
-    if (result['success'] == true && mounted) {
-      setState(() {
-        _roomDetails = result['data'];
-      });
-    }
-  }
+  Future<void> _fetchGroupCategoriesAndInit() async {
+    setState(() => _isLoading = true);
 
-  void _startCountdownTimer() {
-    _countdownTimer?.cancel();
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (mounted) {
-        debugPrint("DEBUG COUNTDOWN TICK: remaining_sec=$_timeRemainingSec, ended=$_auctionEnded");
-        if (_timeRemainingSec > 0 && !_auctionEnded) {
-          setState(() {
-            _timeRemainingSec--;
-          });
+    try {
+      final groupResult = await ApiService.getGroupCategories(widget.roomId);
+      if (groupResult['success'] == true && mounted) {
+        final data = groupResult['data'] as Map<String, dynamic>;
+        _groupId = data['group_id']?.toString();
+        _groupTitle = data['group_title']?.toString() ?? widget.roomTitle;
+        final rawList = (data['categories'] as List<dynamic>?) ?? [];
+
+        _categories = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
+
+        // Initialize state for each category room
+        for (var cat in _categories) {
+          final rId = cat['id']?.toString() ?? '';
+          if (rId.isEmpty) continue;
+
+          final minBid = (cat['item']?['min_bid'] as num?)?.toDouble() ?? 0.0;
+          final minRaise = (cat['item']?['min_raise'] as num?)?.toDouble() ?? 100.0;
+          final currentBid = (cat['current_bid'] as num?)?.toDouble() ?? minBid;
+          final timeRem = (cat['time_remaining_sec'] as num?)?.toInt() ?? 0;
+
+          _roomStates[rId] = {
+            'roomId': rId,
+            'title': cat['title'] ?? '',
+            'category': cat['category'] ?? '',
+            'subcategory': cat['subcategory'] ?? '',
+            'item': cat['item'] ?? {},
+            'currentBid': currentBid,
+            'minBid': minBid,
+            'minRaise': minRaise,
+            'timeRemainingSec': timeRem,
+            'bidderCount': cat['bidder_count'] ?? 0,
+            'isHighestBidder': false,
+            'isFirstBid': (cat['bids_count'] ?? 0) == 0,
+            'auctionEnded': cat['status'] == 'ended',
+            'winnerAlias': cat['winner']?['user_id'],
+            'winningBid': (cat['winner']?['bid_amount'] as num?)?.toDouble(),
+            'bidHistory': <Map<String, dynamic>>[],
+            'bidController': TextEditingController(),
+            'isSpectator': false,
+            'isExpanded': false,
+          };
         }
       }
+    } catch (e) {
+      debugPrint("Error loading group categories: $e");
+    }
+
+    _startGlobalCountdownTimer();
+    await _checkRoleAndAutoConnect();
+  }
+
+  void _startGlobalCountdownTimer() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) return;
+      setState(() {
+        for (var state in _roomStates.values) {
+          int rem = (state['timeRemainingSec'] as int?) ?? 0;
+          bool ended = state['auctionEnded'] == true;
+          if (rem > 0 && !ended) {
+            state['timeRemainingSec'] = rem - 1;
+          }
+        }
+      });
     });
   }
 
   /// Check if the currently logged-in user is admin or test_bidder.
-  /// If so, bypass the credentials screen and auto-connect as a spectator (admin)
-  /// or as a full participant (test_bidder).
   Future<void> _checkRoleAndAutoConnect() async {
-    setState(() => _isLoading = true);
-
     final profileResult = await ApiService.getProfile();
 
     if (!mounted) return;
@@ -90,140 +129,234 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       _userRole = role;
 
       if (role == 'admin' || role == 'seller' || role == 'test_bidder') {
-        // Auto-connect using standard JWT → ws-token endpoint
-        await _connectAsPrivilegedUser();
+        await _connectAllRoomsAsPrivileged();
         return;
       }
     }
 
-    // Regular bidder — show the credentials form
+    // Regular bidder — show credentials form
     setState(() => _isLoading = false);
   }
 
-  /// Fetch a WebSocket token via the standard JWT bearer token route
-  /// (allowed for admin and test_bidder roles).
-  Future<void> _connectAsPrivilegedUser() async {
+  /// Connect all group category rooms via JWT token
+  Future<void> _connectAllRoomsAsPrivileged() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    final result = await ApiService.getWebSocketToken(widget.roomId);
-
-    if (!mounted) return;
-
-    if (result['success'] == true) {
+    try {
       setState(() => _isAuthenticated = true);
-      // is_spectator flag will be set when the backend sends room_state
-      await _connectWebSocketWithToken(result['token']);
-    } else {
-      final errMsg = result['error'] is Map
-          ? (result['error']['error'] ?? 'Failed to join room')
-          : result['error'].toString();
-      setState(() {
-        _errorMessage = errMsg;
-        _isLoading = false;
-      });
+
+      // Connect each room's WebSocket
+      for (var cat in _categories) {
+        final rId = cat['id']?.toString() ?? '';
+        if (rId.isEmpty) continue;
+
+        final tokenResult = await ApiService.getWebSocketToken(rId);
+        if (tokenResult['success'] == true) {
+          _connectSingleRoomWebSocket(rId, tokenResult['token']);
+        }
+      }
+    } catch (e) {
+      setState(() => _errorMessage = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _connectWebSocketWithToken(String token) async {
+  void _connectSingleRoomWebSocket(String roomId, String token) {
     try {
-      setState(() {
-        _isLoading = true;
-        _errorMessage = null;
-      });
-
       final baseWs = ApiService.baseUrl
           .replaceFirst(RegExp(r'^http'), 'ws')
           .replaceFirst('/api', '');
 
-      final wsUrl = '$baseWs/ws/room/${widget.roomId}/';
+      final wsUrl = '$baseWs/ws/room/$roomId/';
       bool hasReceivedData = false;
 
-      // 1. Attempt secure subprotocol connection
-      _channel = WebSocketChannel.connect(
+      final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
         protocols: ['token', token],
       );
 
-      _channel!.stream.listen(
+      _roomChannels[roomId] = channel;
+
+      channel.stream.listen(
         (message) {
           hasReceivedData = true;
           final data = jsonDecode(message);
-          _handleWebSocketMessage(data);
+          _handleRoomWebSocketMessage(roomId, data);
         },
         onError: (error) {
           if (!hasReceivedData && mounted) {
-            _connectWebSocketLegacyFallback(baseWs, token);
-          } else if (mounted) {
-            setState(() {
-              _errorMessage = "Connection error. Auction may be closed.";
-            });
+            _connectSingleRoomWebSocketFallback(roomId, baseWs, token);
           }
         },
         onDone: () {
           if (!hasReceivedData && mounted) {
-            _connectWebSocketLegacyFallback(baseWs, token);
-          } else if (mounted && !_auctionEnded) {
-            setState(() {
-              _errorMessage = "Auction closed by server.";
-            });
+            _connectSingleRoomWebSocketFallback(roomId, baseWs, token);
           }
         },
       );
-
-      setState(() {
-        _isLoading = false;
-      });
-
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = "Failed to connect: $e";
-          _isLoading = false;
-        });
-      }
+      debugPrint("WS error connecting to room $roomId: $e");
     }
   }
 
-  void _connectWebSocketLegacyFallback(String baseWs, String token) {
+  void _connectSingleRoomWebSocketFallback(String roomId, String baseWs, String token) {
     if (!mounted) return;
+    final wsUrlLegacy = '$baseWs/ws/room/$roomId/?token=$token';
+    final channel = WebSocketChannel.connect(Uri.parse(wsUrlLegacy));
+    _roomChannels[roomId] = channel;
 
-    _channel?.sink.close();
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    final wsUrlLegacy = '$baseWs/ws/room/${widget.roomId}/?token=$token';
-
-    _channel = WebSocketChannel.connect(Uri.parse(wsUrlLegacy));
-
-    _channel!.stream.listen(
+    channel.stream.listen(
       (message) {
         final data = jsonDecode(message);
-        _handleWebSocketMessage(data);
+        _handleRoomWebSocketMessage(roomId, data);
       },
-      onError: (error) {
-        if (mounted) {
-          setState(() {
-            _errorMessage = "Connection error. Auction may be closed.";
-          });
-        }
-      },
-      onDone: () {
-        if (mounted && !_auctionEnded) {
-          setState(() {
-            _errorMessage = "Auction closed by server.";
-          });
-        }
-      },
+      onError: (e) => debugPrint("Legacy WS error in room $roomId: $e"),
     );
+  }
+
+  void _handleRoomWebSocketMessage(String roomId, Map<String, dynamic> data) {
+    if (!mounted) return;
+
+    final type = data['type'];
+    final state = _roomStates[roomId];
+    if (state == null) return;
 
     setState(() {
-      _isLoading = false;
+      if (type == 'room_state') {
+        state['currentBid'] = (data['current_bid'] as num?)?.toDouble() ?? state['currentBid'];
+        state['minBid'] = (data['min_bid'] as num?)?.toDouble() ?? state['minBid'];
+        state['minRaise'] = (data['min_raise'] as num?)?.toDouble() ?? state['minRaise'];
+        state['bidderCount'] = (data['bidder_count'] as num?)?.toInt() ?? state['bidderCount'];
+        state['timeRemainingSec'] = (data['time_remaining_sec'] as num?)?.toInt() ?? state['timeRemainingSec'];
+        state['isHighestBidder'] = data['is_highest_bidder'] == true;
+        state['isFirstBid'] = data['is_first_bid'] == true;
+
+        if (data['bidder_alias'] != null) {
+          _authenticatedUserAlias = data['bidder_alias'].toString();
+        }
+
+        if (data['is_spectator'] == true) {
+          _isSpectator = true;
+          state['isSpectator'] = true;
+        }
+
+        if (data['bids'] != null) {
+          final historyList = <Map<String, dynamic>>[];
+          for (var b in data['bids']) {
+            historyList.add({
+              'alias': b['bidder_alias']?.toString() ?? 'Unknown',
+              'amount': (b['amount'] as num?)?.toDouble() ?? 0.0,
+              'time': DateTimeUtils.parseUtc(b['timestamp']?.toString()),
+            });
+          }
+          state['bidHistory'] = historyList;
+          if (historyList.isNotEmpty) {
+            state['isFirstBid'] = false;
+          }
+        }
+      } 
+      else if (type == 'new_bid') {
+        final double newAmt = (data['amount'] as num?)?.toDouble() ?? 0.0;
+        final String newAlias = data['bidder_alias']?.toString() ?? 'Unknown';
+        final bool wasLeading = state['isHighestBidder'] == true;
+
+        state['currentBid'] = newAmt;
+        state['isFirstBid'] = false;
+        state['isHighestBidder'] = (_authenticatedUserAlias != null && newAlias == _authenticatedUserAlias);
+
+        final historyList = (state['bidHistory'] as List<Map<String, dynamic>>?) ?? [];
+        historyList.insert(0, {
+          'alias': newAlias,
+          'amount': newAmt,
+          'time': DateTimeUtils.parseUtc(data['timestamp']?.toString()),
+        });
+        state['bidHistory'] = historyList;
+
+        // Trigger an Outbid Alert Toast if the user was leading on this category and just got topped
+        if (wasLeading && !state['isHighestBidder']) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFFC62828),
+              duration: const Duration(seconds: 4),
+              content: Row(
+                children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '⚡ Outbid Alert! Someone bid ₹${_formatCurrency(newAmt)} on Category: ${state['category'] ?? state['title']}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              action: SnackBarAction(
+                label: 'View',
+                textColor: Colors.amber,
+                onPressed: () {
+                  setState(() => _selectedCategoryRoomId = roomId);
+                },
+              ),
+            ),
+          );
+        }
+      } 
+      else if (type == 'countdown_tick') {
+        state['timeRemainingSec'] = (data['seconds_remaining'] as num?)?.toInt() ?? state['timeRemainingSec'];
+      } 
+      else if (type == 'auction_ended') {
+        state['auctionEnded'] = true;
+        state['winnerAlias'] = data['winner_alias']?.toString();
+        state['winningBid'] = (data['winning_bid'] as num?)?.toDouble();
+      } 
+      else if (type == 'error' || type == 'bid_rejected') {
+        String errorMsg = data['message']?.toString() ?? '';
+        if (errorMsg.isEmpty) {
+          final reason = data['reason']?.toString();
+          if (reason == 'self_outbid_restricted') {
+            errorMsg = 'You are already the highest bidder. You cannot bid against yourself.';
+          } else if (reason == 'first_bid_cap_exceeded') {
+            final maxFirst = data['max_first_bid'];
+            errorMsg = maxFirst != null
+                ? 'The 1st bid cannot exceed ₹${_formatCurrency(maxFirst as num)} (10x starting price).'
+                : '1st bid cannot exceed 10x starting price.';
+          } else if (reason == 'below_minimum') {
+            final minNext = data['min_next_bid'];
+            errorMsg = minNext != null
+                ? 'Bid must be at least ₹${_formatCurrency(minNext as num)}.'
+                : 'Bid is below minimum required raise.';
+          } else if (reason == 'auction_ended') {
+            errorMsg = 'This auction category has ended.';
+          } else {
+            errorMsg = reason ?? 'Error placing bid';
+          }
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('[$roomId] $errorMsg'), backgroundColor: Colors.red),
+        );
+      }
     });
+  }
+
+  String _formatCurrency(num amount) {
+    if (amount % 1 == 0) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toStringAsFixed(2);
+  }
+
+  String _formatTime(int seconds) {
+    int h = seconds ~/ 3600;
+    int m = (seconds % 3600) ~/ 60;
+    int s = seconds % 60;
+    if (h > 0) {
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Future<void> _performEphemeralLogin() async {
@@ -237,214 +370,123 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final result = await ApiService.ephemeralLogin(email, password);
 
-    if (result['success']) {
-      if (result['roomId'] != widget.roomId) {
-        setState(() {
-          _errorMessage = "The credentials supplied are for a different bidding room.";
-          _isLoading = false;
-        });
-        return;
-      }
-      setState(() {
-        _isAuthenticated = true;
-      });
-      _connectWebSocketWithToken(result['token']);
-    } else {
-      // If ephemeral login fails, let's try standard login (for admin & test_bidder roles)
-      final standardResult = await ApiService.login(email, password);
-      if (standardResult['success'] == true) {
-        final profileResult = await ApiService.getProfile();
-        if (profileResult['success'] == true) {
-          final role = profileResult['data']?['role'] as String?;
-          if (role == 'admin' || role == 'seller' || role == 'test_bidder') {
-            _userRole = role;
-            final tokenResult = await ApiService.getWebSocketToken(widget.roomId);
-            if (tokenResult['success'] == true) {
-              setState(() {
-                _isAuthenticated = true;
-              });
-              _connectWebSocketWithToken(tokenResult['token']);
-              return;
-            }
-          }
+    if (result['success'] == true) {
+      setState(() => _isAuthenticated = true);
+      // Connect all category rooms
+      for (var cat in _categories) {
+        final rId = cat['id']?.toString() ?? '';
+        if (rId.isNotEmpty) {
+          _connectSingleRoomWebSocket(rId, result['token']);
         }
       }
+    } else {
+      // Try standard admin/seller/tester login
+      final standardResult = await ApiService.login(email, password);
+      if (standardResult['success'] == true) {
+        await _connectAllRoomsAsPrivileged();
+        return;
+      }
 
-      setState(() {
-        _isLoading = false;
-      });
-      final errorMsg = result['error']?['error'] ?? 'Invalid or expired credentials.';
+      setState(() => _isLoading = false);
+      final errorMsg = result['error']?['error'] ?? 'Invalid credentials or room access expired.';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
       );
     }
   }
 
+  void _placeBidForRoom(String roomId, [double? presetAmount]) {
+    final state = _roomStates[roomId];
+    if (state == null) return;
 
-  void _handleWebSocketMessage(Map<String, dynamic> data) {
-    if (!mounted) return;
-
-    try {
-      final type = data['type'];
-
-      setState(() {
-        if (type == 'room_state') {
-          _currentBid = (data['current_bid'] as num?)?.toDouble() ?? 0.0;
-          _bidderCount = (data['bidder_count'] as num?)?.toInt() ?? 0;
-          _timeRemainingSec = (data['time_remaining_sec'] as num?)?.toInt() ?? 0;
-          
-          // Backend tells us if this connection is spectator-only
-          if (data['is_spectator'] == true) {
-            _isSpectator = true;
-          }
-          if (data['bids'] != null) {
-            _bidHistory.clear();
-            for (var bidData in data['bids']) {
-              _bidHistory.add({
-                'alias': bidData['bidder_alias']?.toString() ?? 'Unknown',
-                'amount': (bidData['amount'] as num?)?.toDouble() ?? 0.0,
-                'time': DateTimeUtils.parseUtc(bidData['timestamp']?.toString()),
-              });
-            }
-          }
-          _startCountdownTimer();
-        } 
-        else if (type == 'new_bid') {
-          _currentBid = (data['amount'] as num?)?.toDouble() ?? 0.0;
-          _bidHistory.insert(0, {
-            'alias': data['bidder_alias']?.toString() ?? 'Unknown',
-            'amount': _currentBid,
-            'time': DateTimeUtils.parseUtc(data['timestamp']?.toString()),
-          });
-        } 
-        else if (type == 'countdown_tick') {
-          _timeRemainingSec = (data['seconds_remaining'] as num?)?.toInt() ?? _timeRemainingSec;
-        } 
-        else if (type == 'auction_ended') {
-          _auctionEnded = true;
-          _winnerAlias = data['winner_alias']?.toString();
-          _winningBid = (data['winning_bid'] as num?)?.toDouble();
-          _showWinnerDialog();
-        } 
-        else if (type == 'error' || type == 'bid_rejected') {
-          final reason = data['reason']?.toString() ?? data['message']?.toString() ?? 'Error placing bid';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(reason), backgroundColor: Colors.red),
-          );
-          if (data['current_bid'] != null) {
-            _currentBid = (data['current_bid'] as num?)?.toDouble() ?? _currentBid;
-          }
-        }
-      });
-    } catch (e, stack) {
-      print("Error handling WebSocket message: $e\n$stack");
-    }
-  }
-
-  String _formatCurrency(num amount) {
-    if (amount % 1 == 0) {
-      return amount.toStringAsFixed(0);
-    }
-    return amount.toStringAsFixed(2);
-  }
-
-  void _placeBid() {
-    // Extra safety guard: admins should never get here, but just in case
-    if (_isSpectator) {
+    if (_isSpectator || state['isSpectator'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You are in spectator/admin mode. Bids are not allowed.'),
-          backgroundColor: Colors.orange,
-        ),
+        const SnackBar(content: Text('You are in spectator/admin mode. Bidding is disabled.'), backgroundColor: Colors.orange),
       );
       return;
     }
 
-    if (_bidController.text.isEmpty) return;
-    
-    final amount = double.tryParse(_bidController.text);
-    if (amount == null || amount <= _currentBid) {
+    if (state['isHighestBidder'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bid must be higher than current bid (₹${_formatCurrency(_currentBid)})')),
+        const SnackBar(content: Text('You currently hold the highest bid. Cannot outbid yourself.'), backgroundColor: Colors.orange),
       );
       return;
     }
 
-    if (_channel != null) {
-      _channel!.sink.add(jsonEncode({
+    final controller = state['bidController'] as TextEditingController;
+    double? amount = presetAmount;
+    if (amount == null) {
+      if (controller.text.isEmpty) return;
+      amount = double.tryParse(controller.text);
+    }
+
+    final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
+    if (amount == null || amount <= currentBid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Bid must be higher than current bid (₹${_formatCurrency(currentBid)})')),
+      );
+      return;
+    }
+
+    // 1st Bid Capping check (10x starting price)
+    final double startingPrice = (state['minBid'] as num?)?.toDouble() ?? 0.0;
+    final bool isFirst = state['isFirstBid'] == true;
+    if (isFirst && startingPrice > 0) {
+      final maxFirst = startingPrice * 10;
+      if (amount > maxFirst) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('1st bid cannot exceed ₹${_formatCurrency(maxFirst)} (10x starting price ₹${_formatCurrency(startingPrice)}).'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    final channel = _roomChannels[roomId];
+    if (channel != null) {
+      channel.sink.add(jsonEncode({
         'type': 'place_bid',
         'amount': amount,
       }));
-      _bidController.clear();
+      controller.clear();
       FocusScope.of(context).unfocus();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WebSocket not connected for this category. Please wait.')),
+      );
     }
-  }
-
-  void _showWinnerDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('Auction Ended!', textAlign: TextAlign.center),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.emoji_events, color: Colors.amber, size: 64),
-            const SizedBox(height: 16),
-            Text('Winner: $_winnerAlias', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            Text('Winning Bid: ₹${_winningBid?.toStringAsFixed(0)}', style: const TextStyle(fontSize: 16)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.pop(context); // Go back to previous screen
-            },
-            child: const Text('Return to Listings'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
   void dispose() {
     _countdownTimer?.cancel();
-    _channel?.sink.close();
-    _bidController.dispose();
+    for (var ch in _roomChannels.values) {
+      ch.sink.close();
+    }
+    for (var st in _roomStates.values) {
+      (st['bidController'] as TextEditingController?)?.dispose();
+    }
     _tempEmailController.dispose();
     _tempPasswordController.dispose();
     super.dispose();
   }
 
-  String _formatTime(int seconds) {
-    int h = seconds ~/ 3600;
-    int m = (seconds % 3600) ~/ 60;
-    int s = seconds % 60;
-    if (h > 0) {
-      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-    }
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
   @override
   Widget build(BuildContext context) {
-    // Show a full-screen loader while checking role (brief, only on first load)
     if (_isLoading && !_isAuthenticated) {
       return Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-          title: Text(widget.roomTitle),
-          elevation: 0,
+          title: Text(_groupTitle ?? widget.roomTitle),
           backgroundColor: Colors.white,
           foregroundColor: Colors.black,
+          elevation: 0,
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -454,401 +496,549 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       return _buildLoginScreen();
     }
 
+    final bool isMultiCategory = _categories.length > 1;
+
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
-        title: Text(widget.roomTitle),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _groupTitle ?? widget.roomTitle,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (isMultiCategory)
+              Text(
+                'Group Auction • ${_categories.length} Categories',
+                style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.w600),
+              ),
+          ],
+        ),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        // Show spectator badge in title area
-        actions: _isSpectator
-            ? [
-                Container(
-                  margin: const EdgeInsets.only(right: 12),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFF4CAF50)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.visibility, size: 14, color: Color(0xFF2E7D32)),
-                      SizedBox(width: 4),
-                      Text(
-                        'Spectator',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF2E7D32),
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ]
-            : null,
+        foregroundColor: Colors.black87,
+        elevation: 1,
+        actions: [
+          if (_isSpectator)
+            Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF4CAF50)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.visibility, size: 14, color: Color(0xFF2E7D32)),
+                  SizedBox(width: 4),
+                  Text('Spectator', style: TextStyle(fontSize: 12, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+        ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
+      body: _errorMessage != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline, size: 54, color: Colors.red),
+                    const SizedBox(height: 14),
+                    Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15)),
+                    const SizedBox(height: 16),
+                    ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Go Back')),
+                  ],
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                // Spectator Banner
+                if (_isSpectator)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: const Color(0xFF1B5E20),
+                    child: const Row(
                       children: [
-                        const Icon(Icons.error_outline, size: 64, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16)),
-                        const SizedBox(height: 20),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Go Back'),
-                        )
+                        Icon(Icons.admin_panel_settings, color: Colors.white, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Admin Spectator Mode — Watching live group auction. Bidding disabled.',
+                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                )
-              : Column(
-                  children: [
-                    // ── Admin Spectator Mode Banner ─────────────────────────
-                    if (_isSpectator)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [Color(0xFF1B5E20), Color(0xFF388E3C)],
+
+                // Top Category Switcher Tabs (Horizontal Bar)
+                if (isMultiCategory) _buildCategorySwitcherBar(),
+
+                // Main Content: All Categories Grid or Single Category Focus
+                Expanded(
+                  child: _selectedCategoryRoomId.isEmpty || _selectedCategoryRoomId == 'all'
+                      ? _buildAllCategoriesMatrixView()
+                      : _buildSingleCategoryDetailedView(_selectedCategoryRoomId),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// Horizontal category bar letting bidders toggle between "All Categories" and specific focused categories
+  Widget _buildCategorySwitcherBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            // "All Categories" Chip
+            ChoiceChip(
+              label: Text(
+                'All Categories (${_categories.length})',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                  color: (_selectedCategoryRoomId.isEmpty || _selectedCategoryRoomId == 'all') ? Colors.white : Colors.black87,
+                ),
+              ),
+              selected: (_selectedCategoryRoomId.isEmpty || _selectedCategoryRoomId == 'all'),
+              selectedColor: const Color(0xFF0288D1),
+              backgroundColor: Colors.grey[100],
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() => _selectedCategoryRoomId = 'all');
+                }
+              },
+            ),
+            const SizedBox(width: 8),
+
+            // Individual Category Chips with Live Badges
+            ..._categories.map((cat) {
+              final rId = cat['id']?.toString() ?? '';
+              final state = _roomStates[rId] ?? {};
+              final isSelected = _selectedCategoryRoomId == rId;
+              final bool isLeading = state['isHighestBidder'] == true;
+              final double curBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
+              final String catName = cat['category'] ?? cat['subcategory'] ?? cat['title'] ?? 'Lot';
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        catName.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isSelected ? Colors.white : Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '₹${_formatCurrency(curBid)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: isSelected ? Colors.white : const Color(0xFF0288D1),
+                        ),
+                      ),
+                      if (isLeading) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.white : const Color(0xFF2E7D32),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'LEADING',
+                            style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: isSelected ? const Color(0xFF2E7D32) : Colors.white,
+                            ),
                           ),
                         ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.admin_panel_settings, color: Colors.white, size: 18),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '👁️  Admin Spectator Mode — You are watching this auction live. Bidding is disabled.',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      ],
+                    ],
+                  ),
+                  selected: isSelected,
+                  selectedColor: const Color(0xFF0288D1),
+                  backgroundColor: isLeading ? const Color(0xFFE8F5E9) : Colors.grey[100],
+                  onSelected: (selected) {
+                    setState(() => _selectedCategoryRoomId = selected ? rId : 'all');
+                  },
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
 
-                    // Item Details Card (Image, Name, Min Bid, Min Increment)
-                    if (_roomDetails != null)
-                      Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Item Image (using actual uploaded image from MinIO)
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                width: 80,
-                                height: 80,
-                                color: Colors.grey[100],
-                                child: (_roomDetails!['item']?['images'] != null &&
-                                        (_roomDetails!['item']['images'] as List).isNotEmpty)
-                                    ? Image.network(
-                                        _roomDetails!['item']['images'][0],
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (context, error, stackTrace) =>
-                                            const Icon(Icons.image, size: 40, color: Colors.grey),
-                                      )
-                                    : const Icon(Icons.image, size: 40, color: Colors.grey),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            // Item Details
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _roomDetails!['item']?['name'] ?? widget.roomTitle,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.black87,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (_roomDetails!['item']?['quantity'] != null) ...[
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Qty: ${formatQuantityWithWords(_roomDetails!['item']?['quantity'])}',
-                                      style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
-                                    ),
-                                  ],
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            const Text(
-                                              'STARTING BID',
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: Colors.grey,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              '₹${_formatCurrency(_roomDetails!['item']?['min_bid'] ?? 0.0)}',
-                                              style: const TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (_roomDetails!['item']?['min_raise'] != null &&
-                                          (_roomDetails!['item']['min_raise'] as num) > 0)
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'MIN INCREMENT',
-                                                style: TextStyle(
-                                                  fontSize: 10,
-                                                  color: Colors.grey,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                '₹${_formatCurrency(_roomDetails!['item']['min_raise'] as num)}',
-                                                style: const TextStyle(
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blueAccent,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+  /// All Categories Grid / Matrix View: Every category displayed on the SAME page with full live bidding controls
+  Widget _buildAllCategoriesMatrixView() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: _categories.length,
+          itemBuilder: (context, index) {
+            final cat = _categories[index];
+            final rId = cat['id']?.toString() ?? '';
+            return _buildCategoryLiveBiddingCard(rId);
+          },
+        );
+      },
+    );
+  }
 
-                    // Status Header
-                    Container(
-                      color: Colors.white,
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('CURRENT BID', style: TextStyle(color: Colors.grey, fontSize: 12, fontWeight: FontWeight.bold)),
-                                  Text(
-                                    '₹${_formatCurrency(_currentBid)}',
-                                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Color(0xFF0288D1)),
-                                  ),
-                                ],
-                              ),
+  /// Self-contained live bidding card for each category in the group auction
+  Widget _buildCategoryLiveBiddingCard(String roomId) {
+    final state = _roomStates[roomId];
+    if (state == null) return const SizedBox.shrink();
+
+    final item = state['item'] as Map<String, dynamic>? ?? {};
+    final String catName = (state['category'] ?? state['subcategory'] ?? 'Auction Category').toString().toUpperCase();
+    final String itemName = item['name'] ?? state['title'] ?? 'Lot Item';
+    final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
+    final double minBid = (state['minBid'] as num?)?.toDouble() ?? 0.0;
+    final double minRaise = (state['minRaise'] as num?)?.toDouble() ?? 100.0;
+    final int timeRem = (state['timeRemainingSec'] as int?) ?? 0;
+    final bool isHighest = state['isHighestBidder'] == true;
+    final bool isFirst = state['isFirstBid'] == true;
+    final bool ended = state['auctionEnded'] == true;
+    final controller = state['bidController'] as TextEditingController;
+    final history = (state['bidHistory'] as List<Map<String, dynamic>>?) ?? [];
+    final bool isExpanded = state['isExpanded'] == true;
+
+    final List images = item['images'] is List ? item['images'] as List : [];
+    final String? thumbUrl = images.isNotEmpty ? images[0].toString() : null;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          border: isHighest ? Border.all(color: const Color(0xFF4CAF50), width: 2) : null,
+          color: Colors.white,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Card Header: Category pill, item name, and live countdown timer
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAFA),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE1F5FE),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      catName,
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0288D1)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      itemName,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  // Countdown Timer Pill
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: timeRem < 120 ? const Color(0xFFFFEBEE) : const Color(0xFFE8F5E9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.timer_outlined, size: 13, color: timeRem < 120 ? Colors.red : Colors.green[800]),
+                        const SizedBox(width: 4),
+                        Text(
+                          ended ? 'ENDED' : _formatTime(timeRem),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: timeRem < 120 ? Colors.red : Colors.green[800],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Card Body: Image, details, and current high bid
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Item Thumbnail
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 76,
+                      height: 76,
+                      color: Colors.grey[100],
+                      child: thumbUrl != null
+                          ? Image.network(thumbUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.image, size: 36, color: Colors.grey))
+                          : const Icon(Icons.image, size: 36, color: Colors.grey),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+
+                  // Bid Metrics
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('CURRENT HIGH BID', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              '₹${_formatCurrency(currentBid)}',
+                              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF0288D1)),
+                            ),
+                            const SizedBox(width: 8),
+                            if (isHighest)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: _timeRemainingSec < 60 ? Colors.red.withOpacity(0.1) : Colors.green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Column(
-                                  children: [
-                                    Text(
-                                      _formatTime(_timeRemainingSec),
-                                      style: TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.bold,
-                                        color: _timeRemainingSec < 60 ? Colors.red : Colors.green,
-                                      ),
-                                    ),
-                                    const Text('remaining', style: TextStyle(fontSize: 10)),
-                                  ],
-                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(color: const Color(0xFF2E7D32), borderRadius: BorderRadius.circular(4)),
+                                child: const Text('LEADING', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              const Icon(Icons.people, size: 16, color: Colors.grey),
-                              const SizedBox(width: 4),
-                              Text('$_bidderCount Bidders Connected', style: const TextStyle(color: Colors.grey)),
-                            ],
-                          )
-                        ],
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Text('Start: ₹${_formatCurrency(minBid)}', style: const TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w500)),
+                            const SizedBox(width: 10),
+                            Text('Min Raise: +₹${_formatCurrency(minRaise)}', style: const TextStyle(fontSize: 11, color: Color(0xFFE65100), fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Banner notifications inside card (Leading / 1st Bid Cap)
+            if (isHighest)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFFE8F5E9), borderRadius: BorderRadius.circular(8)),
+                child: const Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Color(0xFF2E7D32), size: 14),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'You hold the highest bid on this category! Awaiting competitor bids.',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold),
                       ),
                     ),
-
-                    // Bid History
-                    Expanded(
-                      child: _bidHistory.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.hourglass_empty, size: 48, color: Colors.grey[400]),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    'No bids placed yet.\nWaiting for participants...',
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(color: Colors.grey[500], height: 1.6),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: _bidHistory.length,
-                              itemBuilder: (context, index) {
-                                final bid = _bidHistory[index];
-                                final isTestBid = (bid['alias'] as String).startsWith('TEST-');
-                                final isAdminBid = bid['alias'] == 'Admin';
-                                return Card(
-                                  margin: const EdgeInsets.only(bottom: 8),
-                                  child: ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundColor: isAdminBid
-                                          ? const Color(0xFFE8F5E9)
-                                          : isTestBid
-                                              ? const Color(0xFFFFF8E1)
-                                              : const Color(0xFFE1F5FE),
-                                      child: Icon(
-                                        isAdminBid ? Icons.admin_panel_settings : Icons.person,
-                                        color: isAdminBid
-                                            ? const Color(0xFF2E7D32)
-                                            : isTestBid
-                                                ? const Color(0xFFF57F17)
-                                                : const Color(0xFF0288D1),
-                                      ),
-                                    ),
-                                    title: Row(
-                                      children: [
-                                        Text(bid['alias'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                                        if (isTestBid) ...[
-                                          const SizedBox(width: 6),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFFFF8E1),
-                                              borderRadius: BorderRadius.circular(4),
-                                              border: Border.all(color: const Color(0xFFF57F17)),
-                                            ),
-                                            child: const Text('TEST', style: TextStyle(fontSize: 9, color: Color(0xFFF57F17), fontWeight: FontWeight.bold)),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                    subtitle: Text('${bid['time'].hour}:${bid['time'].minute.toString().padLeft(2, '0')}'),
-                                    trailing: Text(
-                                      '₹${bid['amount'].toStringAsFixed(0)}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-
-                    // ── Bidding Controls OR Spectator Info ─────────────────
-                    if (!_auctionEnded)
-                      _isSpectator
-                          // Spectator footer — no input
-                          ? Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                boxShadow: [
-                                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.visibility, color: Colors.grey[500], size: 18),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Spectating as Admin — Bidding Disabled',
-                                    style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
-                                  ),
-                                ],
-                              ),
-                            )
-                          // Normal bidder footer
-                          : Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                boxShadow: [
-                                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))
-                                ],
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _bidController,
-                                      keyboardType: TextInputType.number,
-                                      decoration: InputDecoration(
-                                        hintText: 'Enter your bid...',
-                                        prefixIcon: const Icon(Icons.currency_rupee),
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(25)),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  ElevatedButton(
-                                    onPressed: _placeBid,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: const Color(0xFF0288D1),
-                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                                    ),
-                                    child: const Text('Place Bid', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                                  ),
-                                ],
-                              ),
-                            ),
                   ],
                 ),
+              )
+            else if (isFirst && minBid > 0)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: const Color(0xFFFFF8E1), borderRadius: BorderRadius.circular(8)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: Color(0xFFF57F17), size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '1st Bid Cap: Max ₹${_formatCurrency(minBid * 10)} (10x start ₹${_formatCurrency(minBid)})',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFFF57F17), fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            const SizedBox(height: 8),
+
+            // Quick Increment Action Chips
+            if (!ended && !_isSpectator && !isHighest)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    _buildQuickRaiseChip(roomId, currentBid + minRaise, '+₹${_formatCurrency(minRaise)}'),
+                    const SizedBox(width: 8),
+                    _buildQuickRaiseChip(roomId, currentBid + (minRaise * 5), '+₹${_formatCurrency(minRaise * 5)}'),
+                    const SizedBox(width: 8),
+                    _buildQuickRaiseChip(roomId, currentBid + (minRaise * 10), '+₹${_formatCurrency(minRaise * 10)}'),
+                  ],
+                ),
+              ),
+
+            // Direct Bidding Input Row right on this category card
+            if (!ended && !_isSpectator)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: controller,
+                        enabled: !isHighest,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          hintText: isHighest ? 'Leading this category' : 'Custom bid amount...',
+                          prefixIcon: const Icon(Icons.currency_rupee, size: 18),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    ElevatedButton(
+                      onPressed: isHighest ? null : () => _placeBidForRoom(roomId),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0288D1),
+                        disabledBackgroundColor: Colors.grey[300],
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                      ),
+                      child: Text(
+                        isHighest ? 'Leading' : 'Bid Now',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: isHighest ? Colors.grey[600] : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Expandable Bid History preview toggle
+            InkWell(
+              onTap: () {
+                setState(() {
+                  state['isExpanded'] = !isExpanded;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFAFAFA),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                  border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${history.length} Bids Placed  •  ${state['bidderCount']} Connected',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                    ),
+                    Row(
+                      children: [
+                        Text(
+                          isExpanded ? 'Hide History' : 'View History',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.bold),
+                        ),
+                        Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: const Color(0xFF0288D1)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Expanded Recent Bids Log
+            if (isExpanded)
+              Container(
+                padding: const EdgeInsets.all(12),
+                color: const Color(0xFFF9FAFB),
+                child: history.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text('No bids yet for this category.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      )
+                    : Column(
+                        children: history.take(5).map((b) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(b['alias'].toString(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                                Text('₹${_formatCurrency(b['amount'] as num)}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green)),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickRaiseChip(String roomId, double targetAmount, String label) {
+    return Expanded(
+      child: OutlinedButton(
+        onPressed: () => _placeBidForRoom(roomId, targetAmount),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFF90CAF9)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          backgroundColor: const Color(0xFFF0F9FF),
+        ),
+        child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF0288D1))),
+      ),
+    );
+  }
+
+  /// Single Category Focused View (Expanded view for a specific category while keeping switcher active)
+  Widget _buildSingleCategoryDetailedView(String roomId) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(12),
+      child: _buildCategoryLiveBiddingCard(roomId),
     );
   }
 
@@ -856,58 +1046,40 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text('Enter Room: ${widget.roomTitle}'),
+        title: Text(_groupTitle ?? widget.roomTitle),
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
+        foregroundColor: Colors.black87,
       ),
       body: Center(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Icon(
-                Icons.lock_person_outlined,
-                size: 80,
-                color: Color(0xFF0288D1),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                'Verification Required',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+          padding: const EdgeInsets.all(28.0),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.gavel_rounded, size: 64, color: Color(0xFF0288D1)),
+                const SizedBox(height: 20),
+                Text(
+                  _groupTitle ?? widget.roomTitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Please enter the one-time secure bidding credentials sent to your registered email for this specific room.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                  height: 1.4,
+                const SizedBox(height: 6),
+                const Text(
+                  'Enter your approved credentials to join live group bidding.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
                 ),
-              ),
-              const SizedBox(height: 32),
-              if (_isLoading) ...[
-                const Center(child: CircularProgressIndicator()),
-                const SizedBox(height: 16),
-              ] else ...[
+                const SizedBox(height: 32),
                 TextField(
                   controller: _tempEmailController,
-                  keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
-                    labelText: 'One-Time Bidding Email',
-                    hintText: 'bidder_xxxx@auction.internal',
+                    labelText: 'Bidder Email / ID',
                     prefixIcon: const Icon(Icons.email_outlined),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -915,42 +1087,25 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                   controller: _tempPasswordController,
                   obscureText: true,
                   decoration: InputDecoration(
-                    labelText: 'One-Time Bidding Password',
+                    labelText: 'Password',
                     prefixIcon: const Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                   ),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _isLoading ? null : _performEphemeralLogin,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0288D1),
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text('Enter Live Bidding Room', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
               ],
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _performEphemeralLogin,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0288D1),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: const Text(
-                  'Verify & Enter Room',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: _isLoading ? null : () => Navigator.pop(context),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(color: Colors.grey),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

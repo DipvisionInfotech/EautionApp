@@ -61,9 +61,29 @@ String numberToWords(int number) {
   return result.trim();
 }
 
-String formatQuantityWithWords(dynamic qty) {
-  if (qty == null) return '1 (One)';
-  final int val = int.tryParse(qty.toString()) ?? 1;
-  final words = numberToWords(val);
-  return '$val ($words)';
+String formatQuantityWithWords(dynamic qty, [dynamic unit]) {
+  if (qty == null || qty.toString().trim().isEmpty) return '';
+  final rawStr = qty.toString().trim();
+  final unitStr = (unit != null && unit.toString().trim().isNotEmpty) ? unit.toString().trim() : '';
+
+  if (rawStr.startsWith('🔒')) {
+    return rawStr;
+  }
+
+  // Check if rawStr is numeric or has trailing unit e.g. "1432 MT" or "1432"
+  final numMatch = RegExp(r'^([0-9]+)\s*(.*)$').firstMatch(rawStr);
+  if (numMatch != null) {
+    final numVal = int.tryParse(numMatch.group(1)!);
+    final trailingUnit = numMatch.group(2)?.trim() ?? '';
+    final finalUnit = unitStr.isNotEmpty ? unitStr : trailingUnit;
+
+    if (numVal != null) {
+      final words = numberToWords(numVal);
+      final unitDisplay = finalUnit.isNotEmpty ? ' $finalUnit' : '';
+      return '$numVal$unitDisplay ($words$unitDisplay)'.trim();
+    }
+  }
+
+  final unitDisplay = unitStr.isNotEmpty ? ' $unitStr' : '';
+  return '$rawStr$unitDisplay'.trim();
 }
