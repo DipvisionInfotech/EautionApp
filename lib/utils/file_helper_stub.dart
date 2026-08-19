@@ -5,3 +5,8 @@ Future<List<int>> getPlatformFileBytesImpl(dynamic platformFile) {
 void ensureFilePickerInitialized() {
   // No-op stub
 }
+
+void downloadFileBytesImpl(List<int> bytes, String filename) {
+  // No-op stub
+}
+

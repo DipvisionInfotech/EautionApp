@@ -4,3 +4,4 @@ import 'file_helper_stub.dart'
 
 Future<List<int>> getPlatformFileBytes(dynamic platformFile) => getPlatformFileBytesImpl(platformFile);
 void checkFilePickerInit() => ensureFilePickerInitialized();
+void downloadFileBytes(List<int> bytes, String filename) => downloadFileBytesImpl(bytes, filename);

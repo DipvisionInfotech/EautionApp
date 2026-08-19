@@ -261,6 +261,42 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> downloadKYCDocument(String type) async {
+    final token = await getAccessToken();
+    if (token == null) return {'success': false, 'error': 'No token'};
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/kyc/documents/$type/'),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        String? filename;
+        final disposition = response.headers['content-disposition'];
+        if (disposition != null && disposition.contains('filename=')) {
+          final match = RegExp(r'filename="?([^";\n]+)"?').firstMatch(disposition);
+          if (match != null && match.group(1) != null) {
+            filename = match.group(1);
+          }
+        }
+        filename ??= '${type}_document.pdf';
+        return {
+          'success': true,
+          'bytes': response.bodyBytes,
+          'filename': filename,
+          'contentType': response.headers['content-type'] ?? 'application/pdf',
+        };
+      } else {
+        return {'success': false, 'error': 'Download failed with status ${response.statusCode}'};
+      }
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+
   // Auction Rooms Methods
   static Future<Map<String, dynamic>> getRooms({bool past = false}) async {
     final token = await getAccessToken();

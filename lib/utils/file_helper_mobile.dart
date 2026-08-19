@@ -12,3 +12,8 @@ Future<List<int>> getPlatformFileBytesImpl(dynamic platformFile) async {
 void ensureFilePickerInitialized() {
   // No-op for mobile/desktop (native platforms auto-initialize)
 }
+
+void downloadFileBytesImpl(List<int> bytes, String filename) {
+  // Mobile / desktop fallback
+}
+

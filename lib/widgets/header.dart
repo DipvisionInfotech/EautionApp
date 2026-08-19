@@ -93,6 +93,24 @@ class _HeaderState extends State<Header> {
         String? uploadError;
         List<dynamic> kycDocs = [];
         bool isLoadingDocs = true;
+        PlatformFile? chosenFile;
+        List<int>? chosenBytes;
+
+        final allDocTypes = [
+          {'type': 'aadhaar', 'label': 'Aadhaar Card'},
+          {'type': 'pan', 'label': 'PAN Card'},
+          {'type': 'passport', 'label': 'Passport / ID Proof'},
+          {'type': 'gst', 'label': 'GST Registration'},
+          {'type': 'other', 'label': 'Other Document / Cheque'},
+        ];
+
+        String getLabelForType(String type) {
+          final found = allDocTypes.firstWhere(
+            (item) => item['type'] == type,
+            orElse: () => {'type': type, 'label': type.toUpperCase()},
+          );
+          return found['label'] ?? type.toUpperCase();
+        }
 
         return StatefulBuilder(
           builder: (context, setState) {
@@ -109,6 +127,13 @@ class _HeaderState extends State<Header> {
                   });
                 }
               });
+            }
+
+            final uploadedDocTypes = kycDocs.map((d) => d['type']?.toString().toLowerCase()).toSet();
+            final availableDocTypes = allDocTypes.where((item) => !uploadedDocTypes.contains(item['type'])).toList();
+
+            if (availableDocTypes.isNotEmpty && !availableDocTypes.any((item) => item['type'] == selectedDocType)) {
+              selectedDocType = availableDocTypes.first['type']!;
             }
 
             return AlertDialog(
@@ -137,29 +162,74 @@ class _HeaderState extends State<Header> {
                     if (!isAdmin && kycDocs.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       const Text(
-                        'Uploaded Documents:',
+                        'Uploaded KYC Documents (1 per category):',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF1A237E)),
                       ),
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 8),
                       ...kycDocs.map((doc) {
-                        final docTypeStr = doc['type']?.toString().toUpperCase() ?? '';
+                        final typeKey = doc['type']?.toString().toLowerCase() ?? '';
+                        final docLabel = getLabelForType(typeKey);
+                        final fileName = doc['file_name']?.toString() ?? '${typeKey}_doc.pdf';
                         final size = ((doc['size'] ?? 0) / 1024).toStringAsFixed(0);
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            border: Border.Border.all(color: const Color(0xFFE2E8F0)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
                           child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('• $docTypeStr ($size KB)', style: const TextStyle(fontSize: 12)),
+                              const Icon(Icons.description, color: Color(0xFF1A237E), size: 24),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(docLabel, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E293B))),
+                                    Text('$fileName • $size KB', style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)), overflow: TextOverflow.ellipsis),
+                                  ],
+                                ),
+                              ),
                               IconButton(
                                 constraints: const BoxConstraints(),
-                                padding: EdgeInsets.zero,
-                                icon: const Icon(Icons.delete_forever, color: Colors.red, size: 18),
+                                padding: const EdgeInsets.all(4),
+                                icon: const Icon(Icons.download, color: Color(0xFF1A237E), size: 20),
+                                tooltip: 'Download Document',
+                                onPressed: () async {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Downloading $docLabel...')),
+                                  );
+                                  final res = await ApiService.downloadKYCDocument(doc['type']);
+                                  if (res['success'] == true && res['bytes'] != null) {
+                                    downloadFileBytes(res['bytes'], res['filename'] ?? fileName);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('$docLabel downloaded successfully!')),
+                                      );
+                                    }
+                                  } else {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text(res['error']?.toString() ?? 'Download failed')),
+                                      );
+                                    }
+                                  }
+                                },
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.all(4),
+                                icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                                tooltip: 'Delete Document',
                                 onPressed: () async {
                                   final confirm = await showDialog<bool>(
                                     context: context,
                                     builder: (context) => AlertDialog(
                                       title: const Text('Delete Document'),
-                                      content: Text('Are you sure you want to delete your $docTypeStr document?'),
+                                      content: Text('Are you sure you want to delete your $docLabel?'),
                                       actions: [
                                         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
                                         TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
@@ -169,14 +239,13 @@ class _HeaderState extends State<Header> {
                                   if (confirm == true) {
                                     final res = await ApiService.deleteKYCDocument(doc['type']);
                                     if (res['success'] == true) {
-                                      // Reload status
                                       final newStatus = await ApiService.getKYCStatus();
                                       if (newStatus['success'] == true && mounted) {
                                         setState(() {
                                           kycDocs = newStatus['data']['documents'] ?? [];
                                         });
                                       }
-                                      await _checkLoginStatus(); // Update outer status
+                                      await _checkLoginStatus();
                                       if (context.mounted) {
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(content: Text('Document deleted successfully!')),
@@ -199,113 +268,227 @@ class _HeaderState extends State<Header> {
                       const Divider(),
                     ],
                     if (!kycVerified && !isAdmin) ...[
-                      const SizedBox(height: 15),
+                      const SizedBox(height: 10),
                       const Text(
                         'Upload KYC Document',
                         style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Color(0xFF1A237E)),
                       ),
-                      const SizedBox(height: 8),
-                      DropdownButtonFormField<String>(
-                        value: selectedDocType,
-                        decoration: const InputDecoration(
-                          labelText: 'Document Type',
-                          border: OutlineInputBorder(),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                        ),
-                        items: const [
-                          DropdownMenuItem(value: 'aadhaar', child: Text('Aadhaar Card')),
-                          DropdownMenuItem(value: 'pan', child: Text('PAN Card')),
-                          DropdownMenuItem(value: 'passport', child: Text('Passport')),
-                          DropdownMenuItem(value: 'gst', child: Text('GST Registration')),
-                          DropdownMenuItem(value: 'other', child: Text('Other ID')),
-                        ],
-                        onChanged: (val) {
-                          if (val != null) {
-                            setState(() {
-                              selectedDocType = val;
-                            });
-                          }
-                        },
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Only 1 file allowed per category. Allowed formats: PDF, JPG, PNG (Max 10MB)',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
                       ),
-                      const SizedBox(height: 10),
-                      if (isUploading)
-                        const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(8.0),
-                            child: CircularProgressIndicator(),
+                      const SizedBox(height: 8),
+
+                      if (availableDocTypes.isEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            border: Border.Border.all(color: const Color(0xFFBBF7D0)),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.check_circle, color: Colors.green, size: 20),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'All 5 KYC document categories have been uploaded. To re-upload a document, delete the existing one first.',
+                                  style: TextStyle(color: Color(0xFF166534), fontSize: 12, fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            ],
                           ),
                         )
-                      else
-                        ElevatedButton.icon(
-                          onPressed: () async {
-                            try {
-                              checkFilePickerInit();
-                              final result = await FilePicker.platform.pickFiles(
-                                type: FileType.custom,
-                                allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
-                                withData: true,
-                              );
-                              if (result != null) {
-                                final file = result.files.single;
-                                const maxSizeBytes = 2 * 1024 * 1024;
-                                if (file.size > maxSizeBytes) {
-                                  setState(() {
-                                    uploadError = 'File size must be under 2MB.';
-                                  });
-                                  return;
-                                }
-
-                                setState(() {
-                                  isUploading = true;
-                                  uploadError = null;
-                                });
-                                
-                                final fileBytes = await getPlatformFileBytes(file);
-                                String fileName = file.name;
-                                
-                                final res = await ApiService.uploadKYCDocument(
-                                  selectedDocType,
-                                  fileBytes,
-                                  fileName,
-                                );
-                                
-                                if (res['success'] == true) {
-                                  await _checkLoginStatus();
-                                  final newStatus = await ApiService.getKYCStatus();
-                                  if (newStatus['success'] == true && mounted) {
-                                    setState(() {
-                                      kycDocs = newStatus['data']['documents'] ?? [];
-                                    });
-                                  }
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('KYC Document uploaded successfully!')),
-                                    );
-                                  }
-                                } else {
-                                  setState(() {
-                                    uploadError = res['error']?.toString() ?? 'Upload failed';
-                                  });
-                                }
-                              }
-                            } catch (e) {
+                      else ...[
+                        DropdownButtonFormField<String>(
+                          value: selectedDocType,
+                          decoration: const InputDecoration(
+                            labelText: 'Select Category to Upload',
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          ),
+                          items: availableDocTypes.map((item) {
+                            return DropdownMenuItem<String>(
+                              value: item['type']!,
+                              child: Text(item['label']!),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
                               setState(() {
-                                uploadError = 'Error picking/uploading file: $e';
-                              });
-                            } finally {
-                              setState(() {
-                                isUploading = false;
+                                selectedDocType = val;
+                                chosenFile = null;
+                                chosenBytes = null;
+                                uploadError = null;
                               });
                             }
                           },
-                          icon: const Icon(Icons.upload_file),
-                          label: const Text('Pick & Upload Document'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1A237E),
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 40),
-                          ),
                         ),
+                        const SizedBox(height: 10),
+
+                        // File chosen preview OR Pick Button
+                        if (chosenFile != null && chosenBytes != null) ...[
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              border: Border.Border.all(color: const Color(0xFF93C5FD)),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.attach_file, color: Color(0xFF1D4ED8), size: 20),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        chosenFile!.name,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF1E3A8A)),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    Text(
+                                      '${(chosenFile!.size / 1024).toStringAsFixed(0)} KB',
+                                      style: const TextStyle(fontSize: 11, color: Color(0xFF3B82F6), fontWeight: FontWeight.bold),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Ready to upload for: ${getLabelForType(selectedDocType)}',
+                                  style: const TextStyle(fontSize: 11, color: Color(0xFF1E40AF)),
+                                ),
+                                const SizedBox(height: 10),
+                                if (isUploading)
+                                  const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(8.0),
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  )
+                                else
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: ElevatedButton.icon(
+                                          onPressed: () async {
+                                            setState(() {
+                                              isUploading = true;
+                                              uploadError = null;
+                                            });
+
+                                            try {
+                                              final res = await ApiService.uploadKYCDocument(
+                                                selectedDocType,
+                                                chosenBytes!,
+                                                chosenFile!.name,
+                                              );
+
+                                              if (res['success'] == true) {
+                                                await _checkLoginStatus();
+                                                final newStatus = await ApiService.getKYCStatus();
+                                                if (newStatus['success'] == true && mounted) {
+                                                  setState(() {
+                                                    kycDocs = newStatus['data']['documents'] ?? [];
+                                                    chosenFile = null;
+                                                    chosenBytes = null;
+                                                  });
+                                                }
+                                                if (context.mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(content: Text('${getLabelForType(selectedDocType)} uploaded successfully!')),
+                                                  );
+                                                }
+                                              } else {
+                                                setState(() {
+                                                  uploadError = res['error']?.toString() ?? 'Upload failed';
+                                                });
+                                              }
+                                            } catch (e) {
+                                              setState(() {
+                                                uploadError = 'Error uploading document: $e';
+                                              });
+                                            } finally {
+                                              setState(() {
+                                                isUploading = false;
+                                              });
+                                            }
+                                          },
+                                          icon: const Icon(Icons.cloud_upload, size: 18),
+                                          label: const Text('Confirm & Upload'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: const Color(0xFF16A34A),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(vertical: 10),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      OutlinedButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            chosenFile = null;
+                                            chosenBytes = null;
+                                            uploadError = null;
+                                          });
+                                        },
+                                        style: OutlinedButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                        ),
+                                        child: const Text('Cancel'),
+                                      ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ] else ...[
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              try {
+                                checkFilePickerInit();
+                                final result = await FilePicker.platform.pickFiles(
+                                  type: FileType.custom,
+                                  allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
+                                  withData: true,
+                                );
+                                if (result != null) {
+                                  final file = result.files.single;
+                                  const maxSizeBytes = 10 * 1024 * 1024;
+                                  if (file.size > maxSizeBytes) {
+                                    setState(() {
+                                      uploadError = 'File size must be under 10MB.';
+                                    });
+                                    return;
+                                  }
+
+                                  final bytes = await getPlatformFileBytes(file);
+                                  setState(() {
+                                    chosenFile = file;
+                                    chosenBytes = bytes;
+                                    uploadError = null;
+                                  });
+                                }
+                              } catch (e) {
+                                setState(() {
+                                  uploadError = 'Error picking file: $e';
+                                });
+                              }
+                            },
+                            icon: const Icon(Icons.file_upload_outlined),
+                            label: const Text('Choose File to Upload'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1A237E),
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 40),
+                            ),
+                          ),
+                        ],
+                      ],
                       if (uploadError != null) ...[
                         const SizedBox(height: 5),
                         Text(
