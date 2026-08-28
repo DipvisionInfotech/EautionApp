@@ -463,7 +463,11 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     double? amount = presetAmount;
     if (amount == null) {
       if (controller.text.isEmpty) return;
-      amount = double.tryParse(controller.text);
+      amount = double.tryParse(controller.text.trim());
+    }
+
+    if (amount != null) {
+      amount = double.parse(amount.toStringAsFixed(2));
     }
 
     final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
@@ -1062,9 +1066,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   }
 
   Widget _buildQuickRaiseChip(String roomId, double targetAmount, String label) {
+    final state = _roomStates[roomId];
+    final controller = state?['bidController'] as TextEditingController?;
     return Expanded(
       child: OutlinedButton(
-        onPressed: () => _placeBidForRoom(roomId, targetAmount),
+        onPressed: () {
+          final rounded = double.parse(targetAmount.toStringAsFixed(2));
+          if (controller != null) {
+            controller.text = _formatCurrency(rounded);
+          }
+          _placeBidForRoom(roomId, rounded);
+        },
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: Color(0xFF90CAF9)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
