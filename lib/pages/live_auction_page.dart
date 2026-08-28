@@ -343,10 +343,21 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   }
 
   String _formatCurrency(num amount) {
-    if (amount % 1 == 0) {
-      return amount.toStringAsFixed(0);
+    String str = amount.toStringAsFixed(2);
+    final rawStr = amount.toString();
+    if (rawStr.contains('.')) {
+      final decPart = rawStr.split('.')[1];
+      if (decPart.length > 2) {
+        str = amount.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '');
+        if (str.endsWith('.')) str += '00';
+      }
     }
-    return amount.toStringAsFixed(2);
+    final parts = str.split('.');
+    final whole = parts[0];
+    final dec = parts.length > 1 ? parts[1] : '00';
+    final regex = RegExp(r'(\d+?)(?=(\d\d)+(\d)(?!\d))');
+    final formattedWhole = whole.replaceAllMapped(regex, (match) => '${match[1]},');
+    return '$formattedWhole.$dec';
   }
 
   String _formatTime(int seconds) {

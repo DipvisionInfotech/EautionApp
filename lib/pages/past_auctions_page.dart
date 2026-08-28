@@ -216,8 +216,8 @@ class _PastAuctionsPageState extends State<PastAuctionsPage> {
                     child: Column(
                       children: [
                         _infoRow('Status', room['status']?.toString().toUpperCase() ?? 'ENDED', isBadge: true, isWinner: isUserWinner),
-                        _infoRow('Base Price', '₹$minBid'),
-                        _infoRow('Final Price', '₹$finalPrice'),
+                        _infoRow('Base Price', formatCurrency(minBid)),
+                        _infoRow('Final Price', formatCurrency(finalPrice)),
                         if (qty.isNotEmpty) _infoRow('Quantity', formatQuantityWithWords(qty, unit)),
                       ],
                     ),

@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'gemini_info_dialog.dart';
 import '../services/api_service.dart';
 import '../utils/file_helper.dart';
+import '../utils/number_to_words.dart';
 
 class EnquiryDialog extends StatefulWidget {
   final String auctionTitle;
@@ -427,7 +428,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
                                             borderRadius: BorderRadius.circular(4),
                                           ),
                                           child: Text(
-                                            'Required: ₹${widget.emdAmount.toStringAsFixed(0)}',
+                                            'Required: ${formatCurrency(widget.emdAmount)}',
                                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Color(0xFF0284C7)),
                                           ),
                                         ),

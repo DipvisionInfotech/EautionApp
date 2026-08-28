@@ -87,3 +87,26 @@ String formatQuantityWithWords(dynamic qty, [dynamic unit]) {
   final unitDisplay = unitStr.isNotEmpty ? ' $unitStr' : '';
   return '$rawStr$unitDisplay'.trim();
 }
+
+String formatCurrency(dynamic amount, {bool withSymbol = true}) {
+  if (amount == null) return withSymbol ? '₹0.00' : '0.00';
+  final num? val = (amount is num) ? amount : num.tryParse(amount.toString());
+  if (val == null) return withSymbol ? '₹0.00' : '0.00';
+
+  String str = val.toStringAsFixed(2);
+  final rawStr = val.toString();
+  if (rawStr.contains('.')) {
+    final decPart = rawStr.split('.')[1];
+    if (decPart.length > 2) {
+      str = val.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '');
+      if (str.endsWith('.')) str += '00';
+    }
+  }
+  final parts = str.split('.');
+  final whole = parts[0];
+  final dec = parts.length > 1 ? parts[1] : '00';
+  final regex = RegExp(r'(\d+?)(?=(\d\d)+(\d)(?!\d))');
+  final formattedWhole = whole.replaceAllMapped(regex, (match) => '${match[1]},');
+  final result = '$formattedWhole.$dec';
+  return withSymbol ? '₹$result' : result;
+}

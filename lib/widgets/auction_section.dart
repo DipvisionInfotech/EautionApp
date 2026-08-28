@@ -344,7 +344,7 @@ class _AuctionCardState extends State<AuctionCard> {
 
   String _formatDateTime(DateTime? dt) {
     if (dt == null) return 'TBD';
-    return DateFormat('dd MMM yyyy hh:mm a').format(dt);
+    return DateTimeUtils.formatIST(dt);
   }
 
   @override
@@ -597,13 +597,13 @@ class AuctionDetailDialog {
 
             final minBid = item?['min_bid'] ?? 0;
             final minRaise = item?['min_raise'] ?? 0;
-            final minBidStr = isLocked ? '🔒 Available upon Approval' : '₹$minBid';
-            final minRaiseStr = isLocked ? '🔒 Available upon Approval' : '₹$minRaise';
+            final minBidStr = isLocked ? '🔒 Available upon Approval' : formatCurrency(minBid);
+            final minRaiseStr = isLocked ? '🔒 Available upon Approval' : formatCurrency(minRaise);
             final rawUnit = item?['unit']?.toString() ?? '';
             final regFee = room['registration_fee'] as Map<String, dynamic>?;
             final isEmdRequired = regFee?['required'] == true;
             final emdAmount = double.tryParse(regFee?['amount']?.toString() ?? '') ?? 0.0;
-            final emdStr = isEmdRequired ? '₹${emdAmount.toStringAsFixed(0)} (Mandatory)' : 'Not Required (Free)';
+            final emdStr = isEmdRequired ? '${formatCurrency(emdAmount)} (Mandatory)' : 'Not Required (Free)';
             final qtyStr = isLocked ? '🔒 Available upon Approval' : formatQuantityWithWords(item?['quantity'], rawUnit);
             final deliveryStr = isDelivered ? '✅ Item Delivered' : (room['status'] == 'ended' ? '🚚 Delivery Pending' : 'Not Applicable');
 
@@ -648,8 +648,8 @@ class AuctionDetailDialog {
                     _detailRow('Visibility', visibility == 'members_only' ? '🔒 Private (Members Only)' : 'Public'),
                     _detailRow('Quantity', qtyStr),
                     _detailRow('EMD / Registration Fee', emdStr),
-                    _detailRow('Scheduled Start', start != null ? df.format(start) : 'TBD'),
-                    _detailRow('Scheduled End', end != null ? df.format(end) : 'TBD'),
+                    _detailRow('Scheduled Start', start != null ? DateTimeUtils.formatIST(start) : 'TBD'),
+                    _detailRow('Scheduled End', end != null ? DateTimeUtils.formatIST(end) : 'TBD'),
                     _detailRow('Minimum Bid / Base Price', minBidStr),
                     _detailRow('Minimum Raise Increment', minRaiseStr),
                     _detailRow('Location', item?['location'] ?? 'Not Specified'),

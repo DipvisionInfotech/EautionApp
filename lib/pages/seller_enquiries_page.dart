@@ -304,7 +304,7 @@ class _SellerEnquiriesPageState extends State<SellerEnquiriesPage> {
                   ),
                   if (createdAt != null)
                     Text(
-                      '${createdAt.day}/${createdAt.month}/${createdAt.year} ${createdAt.hour}:${createdAt.minute.toString().padLeft(2, '0')}',
+                      DateTimeUtils.formatIST(createdAt),
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                     ),
                 ],

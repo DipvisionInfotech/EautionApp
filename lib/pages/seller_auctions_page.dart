@@ -5,6 +5,7 @@ import '../services/api_service.dart';
 import '../widgets/custom_drawer.dart';
 import 'live_auction_page.dart';
 import '../utils/date_utils.dart';
+import '../utils/number_to_words.dart';
 
 class SellerAuctionsPage extends StatefulWidget {
   const SellerAuctionsPage({super.key});
@@ -289,8 +290,8 @@ class _SellerAuctionsPageState extends State<SellerAuctionsPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _smallStat('Reserve Price', '₹$minBid'),
-                      _smallStat('Min Raise', '₹$minRaise'),
+                      _smallStat('Reserve Price', formatCurrency(minBid)),
+                      _smallStat('Min Raise', formatCurrency(minRaise)),
                     ],
                   ),
                   
@@ -339,7 +340,7 @@ class _SellerAuctionsPageState extends State<SellerAuctionsPage> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '₹${room['winning_bid']}',
+                            formatCurrency(room['winning_bid']),
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.black87),
                           ),
                         ],
