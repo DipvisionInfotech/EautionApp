@@ -13,7 +13,7 @@ class AuctionPage extends StatefulWidget {
 }
 
 class _AuctionPageState extends State<AuctionPage> {
-  List<dynamic> _rooms = [];
+  List<AuctionDisplayItem> _items = [];
   List<dynamic> _categories = [];
   bool _isLoading = true;
 
@@ -45,25 +45,47 @@ class _AuctionPageState extends State<AuctionPage> {
       final categoriesResult = results[0] as List<dynamic>;
       final roomsResult = results[1] as Map<String, dynamic>;
 
-      List<dynamic> allRooms = roomsResult['success'] == true
+      List<Map<String, dynamic>> rawRooms = roomsResult['success'] == true
           ? ((roomsResult['data']['results'] as List<dynamic>?) ?? [])
+              .where((r) => r is Map)
+              .map((r) => Map<String, dynamic>.from(r as Map))
+              .toList()
           : [];
 
-      // Apply local filters
+      List<AuctionDisplayItem> displayItems = AuctionDisplayItem.groupRooms(rawRooms);
+
+      // Apply category filter
       if (_selectedCategorySlug != null) {
-        allRooms = allRooms.where((r) => r['category'] == _selectedCategorySlug).toList();
+        displayItems = displayItems.where((item) {
+          if (item.isGroup) {
+            return item.lots.any((l) => l['category'] == _selectedCategorySlug);
+          }
+          return item.singleRoom?['category'] == _selectedCategorySlug;
+        }).toList();
       }
-      if (_searchController.text.isNotEmpty) {
-        final q = _searchController.text.toLowerCase();
-        allRooms = allRooms.where((r) =>
-          (r['title']?.toString().toLowerCase().contains(q) ?? false) ||
-          (r['id']?.toString().toLowerCase().contains(q) ?? false)
-        ).toList();
+
+      // Apply search filter
+      if (_searchController.text.trim().isNotEmpty) {
+        final q = _searchController.text.trim().toLowerCase();
+        displayItems = displayItems.where((item) {
+          if (item.title.toLowerCase().contains(q)) return true;
+          if (item.groupId.toLowerCase().contains(q)) return true;
+          if (item.roomId.toLowerCase().contains(q)) return true;
+          if (item.isGroup) {
+            return item.lots.any((l) {
+              final lotTitle = l['title']?.toString().toLowerCase() ?? '';
+              final itemName = (l['item'] as Map?)?['name']?.toString().toLowerCase() ?? '';
+              final lotId = l['id']?.toString().toLowerCase() ?? '';
+              return lotTitle.contains(q) || itemName.contains(q) || lotId.contains(q);
+            });
+          }
+          return false;
+        }).toList();
       }
 
       setState(() {
         _categories = categoriesResult;
-        _rooms = allRooms;
+        _items = displayItems;
         _isLoading = false;
       });
     }
@@ -112,7 +134,7 @@ class _AuctionPageState extends State<AuctionPage> {
                       padding: EdgeInsets.all(60),
                       child: CircularProgressIndicator(color: Color(0xFF0288D1)),
                     ))
-                  else if (_rooms.isEmpty)
+                  else if (_items.isEmpty)
                     _buildEmptyState()
                   else
                     _buildAuctionGrid(screenWidth),
@@ -248,14 +270,18 @@ class _AuctionPageState extends State<AuctionPage> {
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        mainAxisExtent: 220,
+        mainAxisExtent: 228,
         crossAxisSpacing: 25,
         mainAxisSpacing: 25,
       ),
-      itemCount: _rooms.length,
-      itemBuilder: (context, index) => AuctionCard.fromRoom(_rooms[index]),
+      itemCount: _items.length,
+      itemBuilder: (context, index) {
+        final item = _items[index];
+        if (item.isGroup) {
+          return GroupAuctionCard(item: item);
+        }
+        return AuctionCard.fromDisplayItem(item);
+      },
     );
   }
-
-
 }
