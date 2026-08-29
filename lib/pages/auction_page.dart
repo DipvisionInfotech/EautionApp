@@ -264,13 +264,29 @@ class _AuctionPageState extends State<AuctionPage> {
   }
 
   Widget _buildAuctionGrid(double screenWidth) {
+    bool isMobile = screenWidth < 800;
+    if (isMobile) {
+      return ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: _items.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 20),
+        itemBuilder: (context, index) {
+          final item = _items[index];
+          if (item.isGroup) {
+            return GroupAuctionCard(item: item);
+          }
+          return AuctionCard.fromDisplayItem(item);
+        },
+      );
+    }
     int crossAxisCount = screenWidth > 1200 ? 2 : 1;
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
-        mainAxisExtent: 228,
+        mainAxisExtent: 250,
         crossAxisSpacing: 25,
         mainAxisSpacing: 25,
       ),

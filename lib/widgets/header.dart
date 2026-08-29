@@ -548,48 +548,59 @@ class _HeaderState extends State<Header> {
           if (isMobile)
             IconButton(
               icon: const Icon(Icons.menu),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
               onPressed: () {
                 Scaffold.of(context).openDrawer();
               },
             ),
+          if (isMobile) const SizedBox(width: 8),
           // Logo
-          InkWell(
-            onTap: widget.onHomeTap,
-            child: Row(
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFF0288D1),
+          Flexible(
+            child: InkWell(
+              onTap: widget.onHomeTap,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF0288D1),
+                    ),
+                    child: const Icon(Icons.handshake, color: Colors.white, size: 18),
                   ),
-                  child: const Icon(Icons.handshake, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Slick Salvage',
-                      style: TextStyle(
-                        fontSize: screenWidth > 600 ? 20 : 16,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF1A237E),
-                      ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Slick Salvage',
+                          style: TextStyle(
+                            fontSize: screenWidth > 600 ? 20 : 15,
+                            fontWeight: FontWeight.bold,
+                            color: const Color(0xFF1A237E),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const Text(
+                          'Streamlining Salvage',
+                          style: TextStyle(fontSize: 9, color: Colors.grey),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    const Text(
-                      'Streamlining Salvage',
-                      style: TextStyle(fontSize: 10, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
-          if (!isMobile) const Spacer(),
+          const Spacer(),
           // Navigation
-          if (!isMobile)
+          if (!isMobile) ...[
             Row(
               children: [
                 _navItem(context, 'Home', active: widget.activePage == 'Home', onTap: widget.onHomeTap),
@@ -612,13 +623,15 @@ class _HeaderState extends State<Header> {
                 _navItem(context, 'Contact Us', active: widget.activePage == 'Contact Us', onTap: widget.onContactUsTap),
               ],
             ),
-          if (!isMobile) const Spacer(),
+            const Spacer(),
+          ],
           // Auth
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (_isLoggedIn) ...[
                 _authItem(context, Icons.person, _userName ?? 'Profile', onTap: _showProfileDialog),
-                SizedBox(width: isMobile ? 10 : 15),
+                SizedBox(width: isMobile ? 8 : 15),
                 _authItem(context, Icons.logout, 'Logout', onTap: _logout),
               ] else ...[
                 _authItem(context, Icons.lock, 'Login', onTap: () async {
@@ -627,7 +640,7 @@ class _HeaderState extends State<Header> {
                     _checkLoginStatus();
                   }
                 }),
-                SizedBox(width: isMobile ? 10 : 15),
+                SizedBox(width: isMobile ? 8 : 15),
                 _authItem(context, Icons.person_add, 'Register', onTap: () => Navigator.pushNamed(context, '/register')),
               ]
             ],

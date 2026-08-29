@@ -796,16 +796,72 @@ class _AuctionCardState extends State<AuctionCard> {
                                   ),
                                 );
                               } else {
-                                EnquiryDialog.show(
+                          Flexible(
+                            child: Text(
+                              _statusText,
+                              style: TextStyle(
+                                fontSize: isExtraSmall ? 10 : 12,
+                                fontWeight: FontWeight.bold,
+                                color: _statusColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
+                            _timerBox('${_timeLeft.inDays}D', isExtraSmall),
+                            _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
+                            _timeLeft.inMinutes > 0
+                                ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
+                                : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                _actionButton(
                                   context,
-                                  widget.title,
-                                  auctionId: widget.roomId,
-                                  isEmdRequired: widget.isEmdRequired,
-                                  emdAmount: widget.emdAmount,
-                                );
-                              }
-                            },
-                            isExtraSmall,
+                                  'View Details',
+                                  const Color(0xFF03A9F4),
+                                  () => AuctionDetailDialog.show(context, widget.roomId),
+                                  isExtraSmall,
+                                ),
+                                _actionButton(
+                                  context,
+                                  _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
+                                  _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A),
+                                  () {
+                                    if (_statusText == 'LIVE NOW') {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => LiveAuctionPage(
+                                            roomId: widget.roomId,
+                                            roomTitle: widget.title,
+                                          ),
+                                        ),
+                                      );
+                                    } else {
+                                      EnquiryDialog.show(
+                                        context,
+                                        widget.title,
+                                        auctionId: widget.roomId,
+                                        isEmdRequired: widget.isEmdRequired,
+                                        emdAmount: widget.emdAmount,
+                                      );
+                                    }
+                                  },
+                                  isExtraSmall,
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -822,32 +878,49 @@ class _AuctionCardState extends State<AuctionCard> {
 
   Widget _infoRow(String label, String value, {bool isBadge = false}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6.0),
+      padding: const EdgeInsets.only(bottom: 5.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
               style: const TextStyle(
-                  fontSize: 11, color: Color(0xFF777777), fontWeight: FontWeight.w500)),
+                  fontSize: 11, color: Color(0xFF777777), fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           const SizedBox(width: 4),
           if (isBadge)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0288D1),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(value,
+            Flexible(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0288D1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  value,
                   style: const TextStyle(
-                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                ),
+              ),
             )
           else
-            Flexible(
-              child: Text(value,
-                  style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF333333)),
-                  textAlign: TextAlign.right,
-                  overflow: TextOverflow.ellipsis),
+            Expanded(
+              flex: 3,
+              child: Text(
+                value,
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF333333)),
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
         ],
       ),
@@ -923,7 +996,7 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
     final end = widget.item.endTime;
 
     setState(() {
-      if (widget.item.status == 'ended') {
+      if (widget.item.status == 'ended' || widget.item.status == 'cancelled') {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
         _timeLeft = Duration.zero;
@@ -950,21 +1023,12 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
   }
 
   String _getLotsSummary() {
-    final names = widget.item.lots
-        .map((l) {
-          final item = l['item'] as Map<String, dynamic>?;
-          final title = l['title']?.toString() ?? item?['name']?.toString() ?? 'Lot';
-          final qty = item?['quantity']?.toString() ?? '';
-          final unit = item?['unit']?.toString() ?? '';
-          return qty.isNotEmpty ? '$title ($qty $unit)' : title;
-        })
-        .take(3)
-        .toList();
-
-    if (widget.item.lots.length > 3) {
-      names.add('+${widget.item.lots.length - 3} more');
-    }
-    return names.join(', ');
+    if (widget.item.lots.isEmpty) return 'No lots';
+    final lotNames = widget.item.lots.map((l) {
+      final item = l['item'] as Map<String, dynamic>?;
+      return item?['name']?.toString() ?? l['title']?.toString() ?? 'Lot';
+    }).toList();
+    return lotNames.join(', ');
   }
 
   @override
@@ -997,48 +1061,58 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                     width: 120,
                     height: 90,
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       children: [
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF059669),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.layers_rounded, color: Colors.white, size: 11),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    '${widget.item.lots.length} LOTS GROUP',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.5,
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF059669),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.layers_rounded, color: Colors.white, size: 11),
+                                    const SizedBox(width: 3),
+                                    Flexible(
+                                      child: Text(
+                                        '${widget.item.lots.length} LOTS GROUP',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 0.5,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0288D1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                widget.item.type,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.bold,
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF0288D1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  widget.item.type,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
                                 ),
                               ),
                             ),
@@ -1082,19 +1156,22 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  bool isExtraSmall = constraints.maxWidth < 300;
+                  bool isExtraSmall = constraints.maxWidth < 320;
 
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
                         children: [
-                          Text(
-                            _statusText,
-                            style: TextStyle(
-                              fontSize: isExtraSmall ? 10 : 12,
-                              fontWeight: FontWeight.bold,
-                              color: _statusColor,
+                          Flexible(
+                            child: Text(
+                              _statusText,
+                              style: TextStyle(
+                                fontSize: isExtraSmall ? 10 : 12,
+                                fontWeight: FontWeight.bold,
+                                color: _statusColor,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
@@ -1110,39 +1187,47 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          _actionButton(
-                            context,
-                            'View All Lots (${widget.item.lots.length})',
-                            const Color(0xFF0288D1),
-                            () => GroupAuctionDetailDialog.show(
-                              context,
-                              widget.item.groupId,
-                              widget.item.lots,
-                              widget.item.title,
-                              widget.item.allImages,
-                              widget.item.isEmdRequired,
-                              widget.item.emdAmount,
+                          Flexible(
+                            child: Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                _actionButton(
+                                  context,
+                                  'View All Lots (${widget.item.lots.length})',
+                                  const Color(0xFF0288D1),
+                                  () => GroupAuctionDetailDialog.show(
+                                    context,
+                                    widget.item.groupId,
+                                    widget.item.lots,
+                                    widget.item.title,
+                                    widget.item.allImages,
+                                    widget.item.isEmdRequired,
+                                    widget.item.emdAmount,
+                                  ),
+                                  isExtraSmall,
+                                ),
+                                _actionButton(
+                                  context,
+                                  _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
+                                  _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF059669),
+                                  () {
+                                    // Always open the detail dialog — per-lot bidding/interest handled inside
+                                    GroupAuctionDetailDialog.show(
+                                      context,
+                                      widget.item.groupId,
+                                      widget.item.lots,
+                                      widget.item.title,
+                                      widget.item.allImages,
+                                      widget.item.isEmdRequired,
+                                      widget.item.emdAmount,
+                                    );
+                                  },
+                                  isExtraSmall,
+                                ),
+                              ],
                             ),
-                            isExtraSmall,
-                          ),
-                          const SizedBox(width: 6),
-                          _actionButton(
-                            context,
-                            _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
-                            _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF059669),
-                            () {
-                              // Always open the detail dialog — per-lot bidding/interest handled inside
-                              GroupAuctionDetailDialog.show(
-                                context,
-                                widget.item.groupId,
-                                widget.item.lots,
-                                widget.item.title,
-                                widget.item.allImages,
-                                widget.item.isEmdRequired,
-                                widget.item.emdAmount,
-                              );
-                            },
-                            isExtraSmall,
                           ),
                         ],
                       ),
@@ -1163,16 +1248,25 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label,
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
               style: const TextStyle(
-                  fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+                  fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           const SizedBox(width: 4),
-          Flexible(
-            child: Text(value,
-                style: const TextStyle(
-                    fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-                textAlign: TextAlign.right,
-                overflow: TextOverflow.ellipsis),
+          Expanded(
+            flex: 3,
+            child: Text(
+              value,
+              style: const TextStyle(
+                  fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),
@@ -1495,14 +1589,19 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                     // Lots Listing Section
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(
-                          'Auction Lots & Items (${widget.lots.length})',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                        Expanded(
+                          child: Text(
+                            'Auction Lots & Items (${widget.lots.length})',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
+                        const SizedBox(width: 8),
                         Text(
-                          'Select lot to bid / show interest',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          'Select lot to bid / enquire',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                         ),
                       ],
                     ),
@@ -1795,21 +1894,31 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
   Widget _summaryRow(String label, String value) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
-        Text(value, style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+        Expanded(
+          flex: 2,
+          child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 3,
+          child: Text(value, textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
+        ),
       ],
     );
   }
 
   Widget _lotStat(String label, String val) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500)),
-        const SizedBox(height: 2),
-        Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
-      ],
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8), fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 2),
+          Text(val, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)), overflow: TextOverflow.ellipsis),
+        ],
+      ),
     );
   }
 }
@@ -1871,7 +1980,7 @@ class AuctionDetailDialog {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               child: Container(
                 width: 520,
-                padding: const EdgeInsets.all(24),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
@@ -1887,7 +1996,7 @@ class AuctionDetailDialog {
                           Expanded(
                             child: Text(
                               room['title'] ?? 'Auction Details',
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
+                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B)),
                             ),
                           ),
                           IconButton(
@@ -1901,7 +2010,7 @@ class AuctionDetailDialog {
                         ImageSlideshowBox(
                           images: images,
                           width: double.infinity,
-                          height: 200,
+                          height: 180,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         const SizedBox(height: 14),
@@ -1910,7 +2019,7 @@ class AuctionDetailDialog {
                         description,
                         style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.5),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       _detailRow('Status', room['status']?.toString().toUpperCase() ?? 'UPCOMING'),
                       _detailRow('Visibility', visibility == 'members_only' ? '🔒 Private (Members Only)' : 'Public'),
                       _detailRow('Quantity', qtyStr),
@@ -1954,14 +2063,16 @@ class AuctionDetailDialog {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 180,
+          Expanded(
+            flex: 2,
             child: Text(
               label,
               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey),
             ),
           ),
+          const SizedBox(width: 8),
           Expanded(
+            flex: 3,
             child: Text(
               value,
               style: const TextStyle(fontSize: 13, color: Colors.black87, fontWeight: FontWeight.w500),
