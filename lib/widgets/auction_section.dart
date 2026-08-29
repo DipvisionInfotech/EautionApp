@@ -453,36 +453,39 @@ class _AuctionSectionState extends State<AuctionSection> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: themeColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
-                      color: themeColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: themeColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(
+                        color: themeColor,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  sectionTitle,
-                  style: const TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF1E293B),
+                  const SizedBox(height: 8),
+                  Text(
+                    sectionTitle,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF1E293B),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
+
             if (!isMobile && sectionTitle.contains('Upcoming'))
               ElevatedButton.icon(
                 onPressed: () => Navigator.pushNamed(context, '/auction'),
@@ -505,7 +508,7 @@ class _AuctionSectionState extends State<AuctionSection> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: items.length,
-                separatorBuilder: (context, index) => const SizedBox(height: 24),
+                separatorBuilder: (context, index) => const SizedBox(height: 20),
                 itemBuilder: (context, index) => _renderCard(items[index]),
               )
             : GridView.builder(
@@ -513,7 +516,7 @@ class _AuctionSectionState extends State<AuctionSection> {
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: screenWidth > 1200 ? 2 : 1,
-                  mainAxisExtent: 228,
+                  mainAxisExtent: 250,
                   crossAxisSpacing: 30,
                   mainAxisSpacing: 30,
                 ),
@@ -732,7 +735,7 @@ class _AuctionCardState extends State<AuctionCard> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10.0),
               decoration: const BoxDecoration(
@@ -1070,7 +1073,7 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                 ],
               ),
             ),
-            const Spacer(),
+            const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.all(10.0),
               decoration: const BoxDecoration(
@@ -1125,29 +1128,19 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                           const SizedBox(width: 6),
                           _actionButton(
                             context,
-                            _statusText == 'LIVE NOW' ? 'Bid Live' : 'Show Interest',
+                            _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
                             _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF059669),
                             () {
-                              if (_statusText == 'LIVE NOW') {
-                                final firstRoom = widget.item.lots.first;
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LiveAuctionPage(
-                                      roomId: firstRoom['id']?.toString() ?? '',
-                                      roomTitle: widget.item.title,
-                                    ),
-                                  ),
-                                );
-                              } else {
-                                EnquiryDialog.show(
-                                  context,
-                                  widget.item.title,
-                                  auctionId: widget.item.lots.first['id']?.toString(),
-                                  isEmdRequired: widget.item.isEmdRequired,
-                                  emdAmount: widget.item.emdAmount,
-                                );
-                              }
+                              // Always open the detail dialog — per-lot bidding/interest handled inside
+                              GroupAuctionDetailDialog.show(
+                                context,
+                                widget.item.groupId,
+                                widget.item.lots,
+                                widget.item.title,
+                                widget.item.allImages,
+                                widget.item.isEmdRequired,
+                                widget.item.emdAmount,
+                              );
                             },
                             isExtraSmall,
                           ),
@@ -1534,12 +1527,23 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                         final lotRoomId = lot['id']?.toString() ?? '';
                         final location = item?['location']?.toString() ?? '';
 
+                        // Per-lot approval & status
+                        final lotStatus = lot['status']?.toString() ?? 'upcoming';
+                        final lotVisibility = lot['visibility']?.toString() ?? 'public';
+                        final lotIsApproved = lot['is_approved'] == true;
+                        final lotIsTester = lot['is_tester'] == true;
+                        final lotIsLive = lotStatus == 'live';
+                        final lotIsPrivate = lotVisibility == 'members_only';
+                        final lotIsAccessible = !lotIsPrivate || lotIsApproved || lotIsTester;
+                        final canBid = lotIsLive && lotIsAccessible;
+                        final isLocked = lotIsPrivate && !lotIsApproved && !lotIsTester;
+
                         return Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                            border: Border.all(color: isLocked ? const Color(0xFFFFCDD2) : const Color(0xFFE2E8F0)),
                             boxShadow: [
                               BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 4, offset: const Offset(0, 2)),
                             ],
@@ -1572,7 +1576,9 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Row(
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 4,
                                           children: [
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1585,7 +1591,6 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                                                 style: const TextStyle(color: Color(0xFF059669), fontSize: 10, fontWeight: FontWeight.bold),
                                               ),
                                             ),
-                                            const SizedBox(width: 6),
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                               decoration: BoxDecoration(
@@ -1597,6 +1602,24 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                                                 style: const TextStyle(color: Color(0xFF0288D1), fontSize: 10, fontWeight: FontWeight.bold),
                                               ),
                                             ),
+                                            if (lotIsLive)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.red.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: const Text('LIVE', style: TextStyle(color: Colors.red, fontSize: 10, fontWeight: FontWeight.bold)),
+                                              ),
+                                            if (isLocked)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(4),
+                                                ),
+                                                child: const Text('🔒 Approval Required', style: TextStyle(color: Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                              ),
                                           ],
                                         ),
                                         const SizedBox(height: 4),
@@ -1620,9 +1643,9 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  _lotStat('Quantity', formatQuantityWithWords(qty, unit)),
-                                  _lotStat('Starting Bid', formatCurrency(minBid)),
-                                  _lotStat('Min Raise', formatCurrency(minRaise)),
+                                  _lotStat('Quantity', isLocked ? '🔒 Hidden' : formatQuantityWithWords(qty, unit)),
+                                  _lotStat('Starting Bid', isLocked ? '🔒 Hidden' : formatCurrency(minBid)),
+                                  _lotStat('Min Raise', isLocked ? '🔒 Hidden' : formatCurrency(minRaise)),
                                 ],
                               ),
                               if (location.isNotEmpty) ...[
@@ -1645,32 +1668,81 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                               const SizedBox(height: 10),
                               Align(
                                 alignment: Alignment.centerRight,
-                                child: ElevatedButton.icon(
-                                  onPressed: () {
-                                    EnquiryDialog.show(
-                                      context,
-                                      '$lotTitle (${widget.groupTitle})',
-                                      auctionId: lotRoomId,
-                                      isEmdRequired: isEmdRequired,
-                                      emdAmount: emdAmount,
-                                    );
-                                  },
-                                  icon: const Icon(Icons.touch_app_rounded, size: 14),
-                                  label: const Text('Show Interest in this Lot'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF059669),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                  ),
-                                ),
+                                child: canBid
+                                    // Lot is LIVE and user is approved → show Bid Now
+                                    ? ElevatedButton.icon(
+                                        onPressed: () {
+                                          Navigator.pop(context);
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) => LiveAuctionPage(
+                                                roomId: lotRoomId,
+                                                roomTitle: '$lotTitle (${widget.groupTitle})',
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        icon: const Icon(Icons.gavel_rounded, size: 14),
+                                        label: const Text('Bid Now'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                        ),
+                                      )
+                                    : isLocked
+                                        // Private lot, not approved → locked message
+                                        ? ElevatedButton.icon(
+                                            onPressed: () {
+                                              EnquiryDialog.show(
+                                                context,
+                                                '$lotTitle (${widget.groupTitle})',
+                                                auctionId: lotRoomId,
+                                                isEmdRequired: isEmdRequired,
+                                                emdAmount: emdAmount,
+                                              );
+                                            },
+                                            icon: const Icon(Icons.lock_outline, size: 14),
+                                            label: const Text('Request Access'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.orange,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                          )
+                                        // Upcoming public / approved → Show Interest
+                                        : ElevatedButton.icon(
+                                            onPressed: () {
+                                              EnquiryDialog.show(
+                                                context,
+                                                '$lotTitle (${widget.groupTitle})',
+                                                auctionId: lotRoomId,
+                                                isEmdRequired: isEmdRequired,
+                                                emdAmount: emdAmount,
+                                              );
+                                            },
+                                            icon: const Icon(Icons.touch_app_rounded, size: 14),
+                                            label: const Text('Show Interest in this Lot'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: const Color(0xFF059669),
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                            ),
+                                          ),
                               ),
                             ],
                           ),
                         );
                       },
                     ),
+
                   ],
                 ),
               ),
