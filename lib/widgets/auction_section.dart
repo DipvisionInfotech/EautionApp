@@ -744,58 +744,13 @@ class _AuctionCardState extends State<AuctionCard> {
               ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  bool isExtraSmall = constraints.maxWidth < 300;
+                  bool isExtraSmall = constraints.maxWidth < 320;
 
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Row(
                         children: [
-                          Text(
-                            _statusText,
-                            style: TextStyle(
-                              fontSize: isExtraSmall ? 10 : 12,
-                              fontWeight: FontWeight.bold,
-                              color: _statusColor,
-                            ),
-                          ),
-                          if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
-                            _timerBox('${_timeLeft.inDays}D', isExtraSmall),
-                            _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
-                            _timeLeft.inMinutes > 0
-                                ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
-                                : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          _actionButton(
-                            context,
-                            'View Details',
-                            const Color(0xFF03A9F4),
-                            () => AuctionDetailDialog.show(context, widget.roomId),
-                            isExtraSmall,
-                          ),
-                          const SizedBox(width: 6),
-                          _actionButton(
-                            context,
-                            _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
-                            _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A),
-                            () {
-                              if (_statusText == 'LIVE NOW') {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LiveAuctionPage(
-                                      roomId: widget.roomId,
-                                      roomTitle: widget.title,
-                                    ),
-                                  ),
-                                );
-                              } else {
                           Flexible(
                             child: Text(
                               _statusText,
