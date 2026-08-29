@@ -38,7 +38,7 @@
   <link rel="manifest" href="manifest.json">
   
   <script>
-    // 1. Instantly unregister any previously installed service workers to clear client caches
+    // Unregister any previously installed service workers so old cached builds don't interfere
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for (let registration of registrations) {
@@ -46,12 +46,6 @@
         }
       });
     }
-    // 2. Configure Flutter to disable new service worker registrations
-    window.flutterConfiguration = {
-      serviceWorker: {
-        serviceWorkerVersion: null,
-      }
-    };
   </script>
 </head>
 <body>
