@@ -111,7 +111,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           int rem = (state['timeRemainingSec'] as int?) ?? 0;
           bool ended = state['auctionEnded'] == true;
           if (rem > 0 && !ended) {
-            state['timeRemainingSec'] = rem - 1;
+            final newRem = rem - 1;
+            state['timeRemainingSec'] = newRem;
+            // Auto-end locally if timer hits 0 (guards against missed auction_ended WS event)
+            if (newRem == 0) {
+              state['auctionEnded'] = true;
+            }
           }
         }
       });
@@ -276,37 +281,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         });
         state['bidHistory'] = historyList;
 
-        // Trigger an Outbid Alert Toast if the user was leading on this category and just got topped
-        if (wasLeading && !state['isHighestBidder']) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: const Color(0xFFC62828),
-              duration: const Duration(seconds: 4),
-              content: Row(
-                children: [
-                  const Icon(Icons.warning_amber_rounded, color: Colors.white),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '⚡ Outbid Alert! Someone bid ₹${_formatCurrency(newAmt)} on Category: ${state['category'] ?? state['title']}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              action: SnackBarAction(
-                label: 'View',
-                textColor: Colors.amber,
-                onPressed: () {
-                  setState(() => _selectedCategoryRoomId = roomId);
-                },
-              ),
-            ),
-          );
-        }
+        // Real-time outbid state is updated immediately on the lot card UI (leading badge, border, and banner)
       } 
       else if (type == 'countdown_tick') {
-        state['timeRemainingSec'] = (data['seconds_remaining'] as num?)?.toInt() ?? state['timeRemainingSec'];
+        // Ignore countdown ticks after auction has ended — prevents 59-0-59 loop
+        if (state['auctionEnded'] != true) {
+          final secs = (data['seconds_remaining'] as num?)?.toInt() ?? state['timeRemainingSec'];
+          state['timeRemainingSec'] = secs;
+          // If server says 0, mark locally as ended too (belt-and-suspenders)
+          if (secs == 0) {
+            state['auctionEnded'] = true;
+          }
+        }
       } 
       else if (type == 'auction_ended') {
         state['auctionEnded'] = true;
@@ -335,8 +321,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             errorMsg = reason ?? 'Error placing bid';
           }
         }
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('[$roomId] $errorMsg'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(errorMsg),
+            backgroundColor: Colors.red[800],
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: 'Dismiss',
+              textColor: Colors.white,
+              onPressed: () => ScaffoldMessenger.of(context).hideCurrentSnackBar(),
+            ),
+          ),
         );
       }
     });
@@ -446,6 +442,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     if (state == null) return;
 
     if (_isSpectator || state['isSpectator'] == true) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You are in spectator/admin mode. Bidding is disabled.'), backgroundColor: Colors.orange),
       );
@@ -453,8 +450,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     }
 
     if (state['isHighestBidder'] == true) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You currently hold the highest bid. Cannot outbid yourself.'), backgroundColor: Colors.orange),
+        const SnackBar(content: Text('You currently hold the highest bid on this item.'), backgroundColor: Colors.orange),
       );
       return;
     }
@@ -472,6 +470,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
     if (amount == null || amount <= currentBid) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Bid must be higher than current bid (₹${_formatCurrency(currentBid)})')),
       );
@@ -484,6 +483,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     if (isFirst && startingPrice > 0) {
       final maxFirst = startingPrice * 10;
       if (amount > maxFirst) {
+        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('1st bid cannot exceed ₹${_formatCurrency(maxFirst)} (10x starting price ₹${_formatCurrency(startingPrice)}).'),
@@ -496,6 +496,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     final channel = _roomChannels[roomId];
     if (channel != null) {
+      ScaffoldMessenger.of(context).clearSnackBars();
       channel.sink.add(jsonEncode({
         'type': 'place_bid',
         'amount': amount,
@@ -503,6 +504,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       controller.clear();
       FocusScope.of(context).unfocus();
     } else {
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('WebSocket not connected for this category. Please wait.')),
       );
@@ -999,12 +1001,14 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 ),
               ),
 
-            // Expandable Bid History preview toggle
+            // Footer: bid activity summary — spectators/admins see full details, regular bidders see minimal info
             InkWell(
               onTap: () {
-                setState(() {
-                  state['isExpanded'] = !isExpanded;
-                });
+                if (_isSpectator) {
+                  setState(() {
+                    state['isExpanded'] = !isExpanded;
+                  });
+                }
               },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1016,26 +1020,37 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      '${history.length} Bids Placed  •  ${state['bidderCount']} Connected',
-                      style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          isExpanded ? 'Hide History' : 'View History',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.bold),
+                    if (_isSpectator)
+                      Text(
+                        '${history.length} Bids Placed  •  ${state['bidderCount']} Connected',
+                        style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                      )
+                    else
+                      Text(
+                        ended ? 'Auction Ended' : 'Auction Live',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: ended ? Colors.grey : const Color(0xFF0288D1),
+                          fontWeight: FontWeight.w600,
                         ),
-                        Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: const Color(0xFF0288D1)),
-                      ],
-                    ),
+                      ),
+                    if (_isSpectator)
+                      Row(
+                        children: [
+                          Text(
+                            isExpanded ? 'Hide History' : 'View History',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.bold),
+                          ),
+                          Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: const Color(0xFF0288D1)),
+                        ],
+                      ),
                   ],
                 ),
               ),
             ),
 
-            // Expanded Recent Bids Log
-            if (isExpanded)
+            // Expanded Recent Bids Log — only visible to admin/spectators, hidden from regular bidders
+            if (isExpanded && _isSpectator)
               Container(
                 padding: const EdgeInsets.all(12),
                 color: const Color(0xFFF9FAFB),
