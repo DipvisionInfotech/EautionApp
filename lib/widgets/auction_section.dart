@@ -109,6 +109,13 @@ class AuctionDisplayItem {
       }
     } catch (_) {}
 
+    String status = room['status']?.toString() ?? 'upcoming';
+    if (status == 'live' || status == 'upcoming') {
+      if (endTime != null && (DateTime.now().isAfter(endTime) || DateTime.now().isAtSameMomentAs(endTime))) {
+        status = 'ended';
+      }
+    }
+
     final rawQty = item?['quantity']?.toString() ?? '';
     final rawUnit = item?['unit']?.toString() ?? '';
     final regFee = room['registration_fee'] as Map<String, dynamic>?;
@@ -130,7 +137,7 @@ class AuctionDisplayItem {
       qty: qtyDisplay,
       unit: rawUnit,
       roomId: room['id']?.toString() ?? '',
-      status: room['status']?.toString() ?? 'upcoming',
+      status: status,
       visibility: visibility,
       isDelivered: isDelivered,
       isApproved: isApproved,
@@ -163,16 +170,6 @@ class AuctionDisplayItem {
       }
     }
 
-    // Determine status
-    String status = 'upcoming';
-    if (lots.any((l) => l['status'] == 'live')) {
-      status = 'live';
-    } else if (lots.any((l) => l['status'] == 'upcoming')) {
-      status = 'upcoming';
-    } else if (lots.every((l) => l['status'] == 'ended')) {
-      status = 'ended';
-    }
-
     // Determine timing range
     DateTime? minStart;
     DateTime? maxEnd;
@@ -187,6 +184,18 @@ class AuctionDisplayItem {
           if (maxEnd == null || e.isAfter(maxEnd)) maxEnd = e;
         }
       } catch (_) {}
+    }
+
+    // Determine status
+    String status = 'upcoming';
+    if (lots.every((l) => l['status'] == 'ended')) {
+      status = 'ended';
+    } else if (maxEnd != null && (DateTime.now().isAfter(maxEnd) || DateTime.now().isAtSameMomentAs(maxEnd))) {
+      status = 'ended';
+    } else if (lots.any((l) => l['status'] == 'live')) {
+      status = 'live';
+    } else if (lots.any((l) => l['status'] == 'upcoming')) {
+      status = 'upcoming';
     }
 
     final visibility = first['visibility']?.toString() ?? 'public';
@@ -405,8 +414,18 @@ class _AuctionSectionState extends State<AuctionSection> {
     double screenWidth = MediaQuery.of(context).size.width;
     bool isMobile = screenWidth < 900;
 
-    final liveItems = _allItems.where((i) => i.status == 'live').toList();
-    final upcomingItems = _allItems.where((i) => i.status == 'upcoming').toList();
+    final now = DateTime.now();
+    final liveItems = _allItems.where((i) {
+      if (i.status == 'ended' || i.status == 'cancelled') return false;
+      if (i.endTime != null && (now.isAfter(i.endTime!) || now.isAtSameMomentAs(i.endTime!))) return false;
+      return i.status == 'live';
+    }).toList();
+
+    final upcomingItems = _allItems.where((i) {
+      if (i.status == 'ended' || i.status == 'cancelled') return false;
+      if (i.endTime != null && (now.isAfter(i.endTime!) || now.isAtSameMomentAs(i.endTime!))) return false;
+      return i.status == 'upcoming';
+    }).toList();
 
     return Container(
       color: Colors.white,
@@ -811,33 +830,34 @@ class _AuctionCardState extends State<AuctionCard> {
                                   () => AuctionDetailDialog.show(context, widget.roomId),
                                   isExtraSmall,
                                 ),
-                                _actionButton(
-                                  context,
-                                  _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
-                                  _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A),
-                                  () {
-                                    if (_statusText == 'LIVE NOW') {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (context) => LiveAuctionPage(
-                                            roomId: widget.roomId,
-                                            roomTitle: widget.title,
+                                if (_statusText != 'Auction Ended')
+                                  _actionButton(
+                                    context,
+                                    _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
+                                    _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF8BC34A),
+                                    () {
+                                      if (_statusText == 'LIVE NOW') {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => LiveAuctionPage(
+                                              roomId: widget.roomId,
+                                              roomTitle: widget.title,
+                                            ),
                                           ),
-                                        ),
-                                      );
-                                    } else {
-                                      EnquiryDialog.show(
-                                        context,
-                                        widget.title,
-                                        auctionId: widget.roomId,
-                                        isEmdRequired: widget.isEmdRequired,
-                                        emdAmount: widget.emdAmount,
-                                      );
-                                    }
-                                  },
-                                  isExtraSmall,
-                                ),
+                                        );
+                                      } else {
+                                        EnquiryDialog.show(
+                                          context,
+                                          widget.title,
+                                          auctionId: widget.roomId,
+                                          isEmdRequired: widget.isEmdRequired,
+                                          emdAmount: widget.emdAmount,
+                                        );
+                                      }
+                                    },
+                                    isExtraSmall,
+                                  ),
                               ],
                             ),
                           ),
@@ -1209,24 +1229,25 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                                   ),
                                   isExtraSmall,
                                 ),
-                                _actionButton(
-                                  context,
-                                  _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
-                                  _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF059669),
-                                  () {
-                                    // Always open the detail dialog — per-lot bidding/interest handled inside
-                                    GroupAuctionDetailDialog.show(
-                                      context,
-                                      widget.item.groupId,
-                                      widget.item.lots,
-                                      widget.item.title,
-                                      widget.item.allImages,
-                                      widget.item.isEmdRequired,
-                                      widget.item.emdAmount,
-                                    );
-                                  },
-                                  isExtraSmall,
-                                ),
+                                if (_statusText != 'Auction Ended')
+                                  _actionButton(
+                                    context,
+                                    _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
+                                    _statusText == 'LIVE NOW' ? Colors.red : const Color(0xFF059669),
+                                    () {
+                                      // Always open the detail dialog — per-lot bidding/interest handled inside
+                                      GroupAuctionDetailDialog.show(
+                                        context,
+                                        widget.item.groupId,
+                                        widget.item.lots,
+                                        widget.item.title,
+                                        widget.item.allImages,
+                                        widget.item.isEmdRequired,
+                                        widget.item.emdAmount,
+                                      );
+                                    },
+                                    isExtraSmall,
+                                  ),
                               ],
                             ),
                           ),
