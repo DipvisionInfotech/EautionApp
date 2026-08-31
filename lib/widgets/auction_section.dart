@@ -655,15 +655,33 @@ class _AuctionCardState extends State<AuctionCard> {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
         _timeLeft = Duration.zero;
+      } else if (end != null && (now.isAfter(end) || now.isAtSameMomentAs(end))) {
+        _statusText = 'Auction Ended';
+        _statusColor = Colors.grey;
+        _timeLeft = Duration.zero;
       } else if (start != null && now.isBefore(start)) {
         _statusText = 'Starts In : ';
         _statusColor = const Color(0xFF555555);
-        _timeLeft = start.difference(now);
+        final diff = start.difference(now);
+        _timeLeft = diff.isNegative ? Duration.zero : diff;
       } else if (widget.status == 'live' ||
           (start != null && end != null && now.isAfter(start) && now.isBefore(end))) {
-        _statusText = 'LIVE NOW';
-        _statusColor = Colors.red;
-        _timeLeft = end != null ? end.difference(now) : Duration.zero;
+        if (end != null) {
+          final diff = end.difference(now);
+          if (diff.isNegative || diff == Duration.zero) {
+            _statusText = 'Auction Ended';
+            _statusColor = Colors.grey;
+            _timeLeft = Duration.zero;
+          } else {
+            _statusText = 'LIVE NOW';
+            _statusColor = Colors.red;
+            _timeLeft = diff;
+          }
+        } else {
+          _statusText = 'LIVE NOW';
+          _statusColor = Colors.red;
+          _timeLeft = Duration.zero;
+        }
       } else {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
@@ -762,9 +780,14 @@ class _AuctionCardState extends State<AuctionCard> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
-                            _timerBox('${_timeLeft.inDays}D', isExtraSmall),
-                            _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
+                          if (_statusText != 'Auction Ended' &&
+                              _statusText != 'Restricted' &&
+                              !_timeLeft.isNegative &&
+                              _timeLeft > Duration.zero) ...[
+                            if (_timeLeft.inDays > 0)
+                              _timerBox('${_timeLeft.inDays}D', isExtraSmall),
+                            if (_timeLeft.inHours > 0 || _timeLeft.inDays > 0)
+                              _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
                             _timeLeft.inMinutes > 0
                                 ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
                                 : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
@@ -955,15 +978,33 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
         _timeLeft = Duration.zero;
+      } else if (end != null && (now.isAfter(end) || now.isAtSameMomentAs(end))) {
+        _statusText = 'Auction Ended';
+        _statusColor = Colors.grey;
+        _timeLeft = Duration.zero;
       } else if (start != null && now.isBefore(start)) {
         _statusText = 'Starts In : ';
         _statusColor = const Color(0xFF555555);
-        _timeLeft = start.difference(now);
+        final diff = start.difference(now);
+        _timeLeft = diff.isNegative ? Duration.zero : diff;
       } else if (widget.item.status == 'live' ||
           (start != null && end != null && now.isAfter(start) && now.isBefore(end))) {
-        _statusText = 'LIVE NOW';
-        _statusColor = Colors.red;
-        _timeLeft = end != null ? end.difference(now) : Duration.zero;
+        if (end != null) {
+          final diff = end.difference(now);
+          if (diff.isNegative || diff == Duration.zero) {
+            _statusText = 'Auction Ended';
+            _statusColor = Colors.grey;
+            _timeLeft = Duration.zero;
+          } else {
+            _statusText = 'LIVE NOW';
+            _statusColor = Colors.red;
+            _timeLeft = diff;
+          }
+        } else {
+          _statusText = 'LIVE NOW';
+          _statusColor = Colors.red;
+          _timeLeft = Duration.zero;
+        }
       } else {
         _statusText = 'Auction Ended';
         _statusColor = Colors.grey;
@@ -1129,9 +1170,14 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          if (_statusText != 'Auction Ended' && _statusText != 'Restricted') ...[
-                            _timerBox('${_timeLeft.inDays}D', isExtraSmall),
-                            _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
+                          if (_statusText != 'Auction Ended' &&
+                              _statusText != 'Restricted' &&
+                              !_timeLeft.isNegative &&
+                              _timeLeft > Duration.zero) ...[
+                            if (_timeLeft.inDays > 0)
+                              _timerBox('${_timeLeft.inDays}D', isExtraSmall),
+                            if (_timeLeft.inHours > 0 || _timeLeft.inDays > 0)
+                              _timerBox('${_timeLeft.inHours % 24}H', isExtraSmall),
                             _timeLeft.inMinutes > 0
                                 ? _timerBox('${_timeLeft.inMinutes % 60}M', isExtraSmall)
                                 : _timerBox('${_timeLeft.inSeconds % 60}S', isExtraSmall),
