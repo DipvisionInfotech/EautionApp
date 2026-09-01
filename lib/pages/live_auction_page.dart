@@ -267,21 +267,20 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       else if (type == 'new_bid') {
         final double newAmt = (data['amount'] as num?)?.toDouble() ?? 0.0;
         final String newAlias = data['bidder_alias']?.toString() ?? 'Unknown';
-        final bool wasLeading = state['isHighestBidder'] == true;
 
         state['currentBid'] = newAmt;
         state['isFirstBid'] = false;
-        state['isHighestBidder'] = (_authenticatedUserAlias != null && newAlias == _authenticatedUserAlias);
+        state['isHighestBidder'] = data['is_highest_bidder'] == true || (_authenticatedUserAlias != null && newAlias == _authenticatedUserAlias);
 
-        final historyList = (state['bidHistory'] as List<Map<String, dynamic>>?) ?? [];
-        historyList.insert(0, {
-          'alias': newAlias,
-          'amount': newAmt,
-          'time': DateTimeUtils.parseUtc(data['timestamp']?.toString()),
-        });
-        state['bidHistory'] = historyList;
-
-        // Real-time outbid state is updated immediately on the lot card UI (leading badge, border, and banner)
+        if (_isSpectator || state['isSpectator'] == true) {
+          final historyList = (state['bidHistory'] as List<Map<String, dynamic>>?) ?? [];
+          historyList.insert(0, {
+            'alias': newAlias,
+            'amount': newAmt,
+            'time': DateTimeUtils.parseUtc(data['timestamp']?.toString()),
+          });
+          state['bidHistory'] = historyList;
+        }
       } 
       else if (type == 'countdown_tick') {
         // Ignore countdown ticks after auction has ended — prevents 59-0-59 loop
@@ -1001,42 +1000,31 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 ),
               ),
 
-            // Footer: bid activity summary — spectators/admins see full details, regular bidders see minimal info
-            InkWell(
-              onTap: () {
-                if (_isSpectator) {
-                  setState(() {
-                    state['isExpanded'] = !isExpanded;
-                  });
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFAFAFA),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-                  border: Border(top: BorderSide(color: Colors.grey[200]!)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (_isSpectator)
-                      Text(
-                        '${history.length} Bids Placed  •  ${state['bidderCount']} Connected',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
-                      )
-                    else
-                      Text(
-                        ended ? 'Auction Ended' : 'Auction Live',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: ended ? Colors.grey : const Color(0xFF0288D1),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    if (_isSpectator)
-                      Row(
+            // Footer: bid activity status — spectators/admins see audit history, regular bidders see privacy-safe live status
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAFA),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                border: Border(top: BorderSide(color: Colors.grey[200]!)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  if (_isSpectator)
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          state['isExpanded'] = !isExpanded;
+                        });
+                      },
+                      child: Row(
                         children: [
+                          Text(
+                            '${history.length} Bids Placed  •  ${state['bidderCount'] ?? 0} Connected',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(width: 8),
                           Text(
                             isExpanded ? 'Hide History' : 'View History',
                             style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.bold),
@@ -1044,12 +1032,43 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                           Icon(isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, size: 16, color: const Color(0xFF0288D1)),
                         ],
                       ),
-                  ],
-                ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: ended ? Colors.grey : const Color(0xFF2E7D32),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          ended ? 'Auction Ended' : 'Live Bidding Active',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: ended ? Colors.grey[700] : const Color(0xFF2E7D32),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  if (!_isSpectator && !ended)
+                    Text(
+                      isHighest ? 'Leading Bidder' : 'Next Min: ₹${_formatCurrency(currentBid + minRaise)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: isHighest ? const Color(0xFF2E7D32) : const Color(0xFFE65100),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                ],
               ),
             ),
 
-            // Expanded Recent Bids Log — only visible to admin/spectators, hidden from regular bidders
+            // Expanded Recent Bids Log — ONLY visible to admin/spectators, completely hidden from participating bidders
             if (isExpanded && _isSpectator)
               Container(
                 padding: const EdgeInsets.all(12),
