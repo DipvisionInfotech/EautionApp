@@ -50,6 +50,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   String? _groupId;
   String? _groupTitle;
   List<Map<String, dynamic>> _categories = [];
+  String? _sessionToken;
+  Set<String>? _approvedRoomIds;
 
   // Independent state per room: roomId -> roomState
   final Map<String, Map<String, dynamic>> _roomStates = {};
@@ -88,18 +90,32 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     super.dispose();
   }
 
-  Future<void> _fetchGroupCategoriesAndInit() async {
+  Future<void> _fetchGroupCategoriesAndInit({String? sessionToken}) async {
     setState(() => _isLoading = true);
 
     try {
-      final groupResult = await ApiService.getGroupCategories(widget.roomId);
+      final activeSession = sessionToken ?? _sessionToken;
+      final groupResult = await ApiService.getGroupCategories(
+        widget.roomId,
+        sessionToken: activeSession,
+      );
       if (groupResult['success'] == true && mounted) {
         final data = groupResult['data'] as Map<String, dynamic>;
         _groupId = data['group_id']?.toString();
         _groupTitle = data['group_title']?.toString() ?? widget.roomTitle;
         final rawList = (data['categories'] as List<dynamic>?) ?? [];
 
-        _categories = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
+        var parsedList = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
+
+        // For non-spectator bidders, strictly filter to approved lots if known
+        if (!_isSpectator && _approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
+          parsedList = parsedList.where((cat) {
+            final rId = cat['id']?.toString() ?? '';
+            return _approvedRoomIds!.contains(rId);
+          }).toList();
+        }
+
+        _categories = parsedList;
 
         // Sort categories by created_at ascending (fallback to id) so ordering strictly matches modal
         _categories.sort((a, b) {
@@ -149,6 +165,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             'myAlias': null,
             'bidController': TextEditingController(),
             'isSpectator': false,
+            'isApproved': cat['is_approved'] == true,
           };
         }
       }
@@ -196,7 +213,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           }
         }
         if (shouldRefresh) {
-          _fetchGroupCategoriesAndInit();
+          _fetchGroupCategoriesAndInit(sessionToken: _sessionToken);
         }
       }
     });
@@ -463,6 +480,25 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     if (result['success'] == true) {
       final String sessionToken = result['token']?.toString() ?? '';
+      _sessionToken = sessionToken;
+
+      final approvedList = result['approved_room_ids'] as List?;
+      if (approvedList != null && approvedList.isNotEmpty) {
+        _approvedRoomIds = approvedList.map((e) => e.toString()).toSet();
+      }
+
+      // Re-fetch categories passing the authenticated sessionToken
+      // Backend GroupCategoriesView will now strictly return only approved lots for this bidder
+      await _fetchGroupCategoriesAndInit(sessionToken: sessionToken);
+
+      // Client-side guard: filter _categories strictly to approved lots
+      if (_approvedRoomIds != null && !_isSpectator) {
+        _categories = _categories.where((cat) {
+          final rId = cat['id']?.toString() ?? '';
+          return _approvedRoomIds!.contains(rId);
+        }).toList();
+      }
+
       await _connectAllRoomsWithSession(sessionToken);
     } else {
       // Fallback check: if user entered standard login email
@@ -476,11 +512,19 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             await _connectAllRoomsForAdmin();
             return;
           } else {
-            // For standard bidder login, get ws token for this room
+            // Standard bidder login: re-fetch categories using authenticated JWT
+            await _fetchGroupCategoriesAndInit();
+
+            // Client-side guard: filter by is_approved
+            _categories = _categories.where((cat) => cat['is_approved'] == true).toList();
+            _approvedRoomIds = _categories.map((c) => c['id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet();
+
             try {
               final wsResult = await ApiService.getWebSocketToken(widget.roomId);
               if (wsResult['success'] == true && wsResult['token'] != null) {
-                await _connectAllRoomsWithSession(wsResult['token'].toString());
+                final wsToken = wsResult['token'].toString();
+                _sessionToken = wsToken;
+                await _connectAllRoomsWithSession(wsToken);
                 return;
               }
             } catch (_) {}
@@ -594,8 +638,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final int crossAxisCount = screenWidth >= 1100 ? 3 : (screenWidth >= 650 ? 2 : 1);
 
-    // Classify lots strictly: LIVE, UPCOMING, and ENDED
-    final liveLots = _categories.where((cat) {
+    // Filter categories strictly to approved lots for bidders (spectators/admins see all)
+    final validCategories = _categories.where((cat) {
+      if (_isSpectator) return true;
+      final rId = cat['id']?.toString() ?? '';
+      if (_approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
+        return _approvedRoomIds!.contains(rId);
+      }
+      return cat['is_approved'] == true;
+    }).toList();
+
+    // Classify lots strictly: LIVE, UPCOMING, and ENDED from approved lots
+    final liveLots = validCategories.where((cat) {
       final rId = cat['id']?.toString() ?? '';
       final state = _roomStates[rId];
       final status = state?['status']?.toString() ?? cat['status']?.toString();
@@ -603,7 +657,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       return status == 'live' && !isEnded;
     }).toList();
 
-    final upcomingLots = _categories.where((cat) {
+    final upcomingLots = validCategories.where((cat) {
       final rId = cat['id']?.toString() ?? '';
       final state = _roomStates[rId];
       final status = state?['status']?.toString() ?? cat['status']?.toString();
@@ -611,7 +665,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       return status == 'upcoming' && !isEnded;
     }).toList();
 
-    final endedLots = _categories.where((cat) {
+    final endedLots = validCategories.where((cat) {
       final rId = cat['id']?.toString() ?? '';
       final state = _roomStates[rId];
       final status = state?['status']?.toString() ?? cat['status']?.toString();
@@ -633,7 +687,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             ),
             Text(
               liveLots.isNotEmpty
-                  ? 'Live Bidding • ${liveLots.length} Live Lot${liveLots.length == 1 ? '' : 's'}'
+                  ? (_isSpectator
+                      ? 'Live Bidding • ${liveLots.length} Live Lot${liveLots.length == 1 ? '' : 's'}'
+                      : 'Live Bidding • ${liveLots.length} Approved Live Lot${liveLots.length == 1 ? '' : 's'}')
                   : (upcomingLots.isNotEmpty
                       ? 'Upcoming Event Lots (${upcomingLots.length})'
                       : 'Auction Event Concluded'),
@@ -652,7 +708,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             tooltip: 'Refresh Bidding Room',
-            onPressed: _fetchGroupCategoriesAndInit,
+            onPressed: () => _fetchGroupCategoriesAndInit(sessionToken: _sessionToken),
           ),
         ],
       ),
@@ -660,8 +716,55 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage != null
               ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
-              : _categories.isEmpty
-                  ? const Center(child: Text("No auction lots found for this event."))
+              : validCategories.isEmpty
+                  ? Center(
+                      child: Container(
+                        constraints: const BoxConstraints(maxWidth: 480),
+                        padding: const EdgeInsets.all(28),
+                        margin: const EdgeInsets.all(20),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.lock_outline_rounded, size: 40, color: Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'No Approved Lots Available',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'You are not currently approved to bid on any lots in this auction event. Please contact the auction administrator to approve your participation.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
+                            ),
+                            const SizedBox(height: 20),
+                            ElevatedButton.icon(
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.arrow_back, size: 16),
+                              label: const Text('Return to Auctions'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0F172A),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
                   : liveLots.isNotEmpty
                       ? SingleChildScrollView(
                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -729,7 +832,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: Text(
-                                          '${upcomingLots.length} more lot(s) in this event are scheduled to go live later.',
+                                          '${upcomingLots.length} more ${_isSpectator ? '' : 'approved '}lot(s) in this event are scheduled to go live later.',
                                           style: const TextStyle(fontSize: 13, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600),
                                         ),
                                       ),

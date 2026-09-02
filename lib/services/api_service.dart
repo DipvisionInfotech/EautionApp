@@ -338,17 +338,23 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> getGroupCategories(String roomId, {String? status}) async {
+  static Future<Map<String, dynamic>> getGroupCategories(String roomId, {String? status, String? sessionToken}) async {
     final token = await getAccessToken();
     final headers = <String, String>{
       'Content-Type': 'application/json',
     };
-    if (token != null) {
+    if (sessionToken != null && sessionToken.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $sessionToken';
+    } else if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
 
     try {
-      final queryParam = (status != null && status.isNotEmpty) ? '?status=$status' : '';
+      final List<String> qParams = [];
+      if (status != null && status.isNotEmpty) qParams.add('status=$status');
+      if (sessionToken != null && sessionToken.isNotEmpty) qParams.add('session_token=$sessionToken');
+      final queryParam = qParams.isNotEmpty ? '?${qParams.join('&')}' : '';
+
       final response = await http.get(
         Uri.parse('$baseUrl/rooms/$roomId/group-categories/$queryParam'),
         headers: headers,
