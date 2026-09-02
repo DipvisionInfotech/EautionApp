@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
-import '../utils/datetime_utils.dart';
-import '../utils/formatters.dart';
+import '../utils/date_utils.dart';
+import '../utils/number_to_words.dart';
 
 /// Single-page responsive multi-lot live bidding room.
 /// 
@@ -373,7 +373,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   }
 
   String _formatCurrency(num amount) {
-    return formatCurrency(amount);
+    return formatCurrency(amount, withSymbol: false);
   }
 
   /// Formats seconds into a human-friendly countdown display.
