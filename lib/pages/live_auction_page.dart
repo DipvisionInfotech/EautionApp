@@ -69,7 +69,13 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   @override
   void initState() {
     super.initState();
-    _fetchGroupCategoriesAndInit();
+    _initPage();
+  }
+
+  Future<void> _initPage() async {
+    await _fetchGroupCategoriesAndInit(showLoading: true);
+    await _checkRoleAndAutoConnect();
+    _startGlobalCountdownTimer();
   }
 
   @override
@@ -90,8 +96,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     super.dispose();
   }
 
-  Future<void> _fetchGroupCategoriesAndInit({String? sessionToken}) async {
-    setState(() => _isLoading = true);
+  Future<void> _fetchGroupCategoriesAndInit({String? sessionToken, bool showLoading = false}) async {
+    if (showLoading) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       final activeSession = sessionToken ?? _sessionToken;
@@ -144,45 +152,60 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           final status = cat['status']?.toString() ?? 'upcoming';
           final isEnded = status == 'ended' || (status == 'live' && timeRem == 0);
 
-          _roomStates[rId] = {
-            'roomId': rId,
-            'title': cat['title']?.toString() ?? '',
-            'category': cat['category']?.toString() ?? '',
-            'subcategory': cat['subcategory']?.toString() ?? '',
-            'item': itemMap,
-            'currentBid': currentBid,
-            'minBid': minBid,
-            'minRaise': minRaise,
-            'timeRemainingSec': timeRem,
-            'isHighestBidder': false,
-            'isFirstBid': (cat['bids_count'] ?? 0) == 0,
-            'status': status,
-            'scheduledStart': cat['scheduled_start']?.toString(),
-            'scheduledEnd': cat['scheduled_end']?.toString(),
-            'auctionEnded': isEnded,
-            'winnerAlias': cat['winner']?['user_id']?.toString(),
-            'winningBid': winnerMap != null ? _parseDouble(winnerMap['bid_amount'], 0.0) : null,
-            'myAlias': null,
-            'bidController': TextEditingController(),
-            'isSpectator': false,
-            'isApproved': cat['is_approved'] == true,
-          };
+          if (_roomStates.containsKey(rId)) {
+            final existing = _roomStates[rId]!;
+            existing['status'] = status;
+            existing['timeRemainingSec'] = timeRem;
+            existing['auctionEnded'] = isEnded;
+            existing['currentBid'] = currentBid;
+            existing['minBid'] = minBid;
+            existing['minRaise'] = minRaise;
+            if (winnerMap != null) {
+              existing['winningBid'] = _parseDouble(winnerMap['bid_amount'], 0.0);
+              existing['winnerAlias'] = cat['winner']?['user_id']?.toString();
+            }
+          } else {
+            _roomStates[rId] = {
+              'roomId': rId,
+              'title': cat['title']?.toString() ?? '',
+              'category': cat['category']?.toString() ?? '',
+              'subcategory': cat['subcategory']?.toString() ?? '',
+              'item': itemMap,
+              'currentBid': currentBid,
+              'minBid': minBid,
+              'minRaise': minRaise,
+              'timeRemainingSec': timeRem,
+              'isHighestBidder': false,
+              'isFirstBid': (cat['bids_count'] ?? 0) == 0,
+              'status': status,
+              'scheduledStart': cat['scheduled_start']?.toString(),
+              'scheduledEnd': cat['scheduled_end']?.toString(),
+              'auctionEnded': isEnded,
+              'winnerAlias': cat['winner']?['user_id']?.toString(),
+              'winningBid': winnerMap != null ? _parseDouble(winnerMap['bid_amount'], 0.0) : null,
+              'myAlias': null,
+              'bidController': TextEditingController(),
+              'isSpectator': false,
+              'isApproved': cat['is_approved'] == true,
+            };
+          }
         }
       }
     } catch (e, stack) {
       debugPrint("Error loading group categories: $e\n$stack");
+    } finally {
+      if (mounted && showLoading) {
+        setState(() => _isLoading = false);
+      }
     }
-
-    _startGlobalCountdownTimer();
-    await _checkRoleAndAutoConnect();
   }
 
+  /// Global local countdown timer that updates seconds display every second without making any network calls.
+  /// All real-time bid updates, countdown corrections, and lot conclusions are driven by WebSockets.
   void _startGlobalCountdownTimer() {
     _countdownTimer?.cancel();
-    int tickCount = 0;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
-      tickCount++;
       setState(() {
         for (var state in _roomStates.values) {
           int rem = (state['timeRemainingSec'] as int?) ?? 0;
@@ -198,50 +221,54 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           }
         }
       });
-
-      // Periodically (every 10 seconds), check if any upcoming lot's scheduled_start has arrived
-      if (tickCount % 10 == 0) {
-        bool shouldRefresh = false;
-        final now = DateTime.now().toUtc();
-        for (var cat in _categories) {
-          if (cat['status'] == 'upcoming' && cat['scheduled_start'] != null) {
-            final start = DateTime.tryParse(cat['scheduled_start'].toString());
-            if (start != null && now.isAfter(start.toUtc())) {
-              shouldRefresh = true;
-              break;
-            }
-          }
-        }
-        if (shouldRefresh) {
-          _fetchGroupCategoriesAndInit(sessionToken: _sessionToken);
-        }
-      }
     });
   }
 
   /// Check user role: ONLY admin gets spectator auto-connect.
-  /// ALL BIDDERS (even if logged in to website) MUST enter room-specific credentials on the login screen.
+  /// Bidders authenticate via room credentials. Never logs out an already-authenticated bidder!
   Future<void> _checkRoleAndAutoConnect() async {
-    final profileResult = await ApiService.getProfile();
+    if (_isAuthenticated) return;
 
-    if (!mounted) return;
+    try {
+      final profileResult = await ApiService.getProfile();
+      if (!mounted) return;
 
-    if (profileResult['success'] == true) {
-      final role = profileResult['data']?['role'] as String?;
-      _userRole = role;
+      if (profileResult['success'] == true) {
+        final role = profileResult['data']?['role'] as String?;
+        _userRole = role;
 
-      if (role == 'admin') {
-        _isSpectator = true;
-        await _connectAllRoomsForAdmin();
-        return;
+        if (role == 'admin') {
+          _isSpectator = true;
+          await _connectAllRoomsForAdmin();
+          return;
+        }
+      }
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _isAuthenticated = false;
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Manual or background refresh of group categories without disrupting active session or WebSockets
+  Future<void> _refreshCategories() async {
+    await _fetchGroupCategoriesAndInit(sessionToken: _sessionToken, showLoading: false);
+
+    // If any newly live room is not yet connected to WebSocket, connect it
+    if (_sessionToken != null) {
+      for (var cat in _categories) {
+        final rId = cat['id']?.toString() ?? '';
+        final status = cat['status']?.toString();
+        final state = _roomStates[rId];
+        final isEnded = state?['auctionEnded'] == true || status == 'ended';
+        if (rId.isNotEmpty && status == 'live' && !isEnded && !_roomChannels.containsKey(rId)) {
+          _connectSingleRoomWebSocket(rId, _sessionToken!);
+        }
       }
     }
-
-    // Always require entering room-specific credentials for bidders
-    setState(() {
-      _isAuthenticated = false;
-      _isLoading = false;
-    });
   }
 
   /// Connect all rooms for Admin Spectator Mode
@@ -708,7 +735,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             tooltip: 'Refresh Bidding Room',
-            onPressed: () => _fetchGroupCategoriesAndInit(sessionToken: _sessionToken),
+            onPressed: () => _refreshCategories(),
           ),
         ],
       ),
@@ -969,7 +996,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
               }),
               const SizedBox(height: 16),
               ElevatedButton.icon(
-                onPressed: _fetchGroupCategoriesAndInit,
+                onPressed: _refreshCategories,
                 icon: const Icon(Icons.refresh, size: 16),
                 label: const Text('Check for Live Lots'),
                 style: ElevatedButton.styleFrom(

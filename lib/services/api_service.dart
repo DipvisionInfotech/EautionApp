@@ -344,8 +344,9 @@ class ApiService {
       'Content-Type': 'application/json',
     };
     if (sessionToken != null && sessionToken.isNotEmpty) {
-      headers['Authorization'] = 'Bearer $sessionToken';
-    } else if (token != null) {
+      headers['X-Session-Token'] = sessionToken;
+    }
+    if (token != null) {
       headers['Authorization'] = 'Bearer $token';
     }
 
