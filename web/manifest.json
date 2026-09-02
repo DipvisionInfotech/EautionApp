@@ -1,11 +1,11 @@
 {
-    "name": "e_auction",
-    "short_name": "e_auction",
+    "name": "Slick Salvage LLP - Premier E-auction Platform",
+    "short_name": "Slick Salvage",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#FFFFFF",
+    "theme_color": "#0288D1",
+    "description": "Slick Salvage LLP - Premier E-auction Platform for salvage, commercial liquidations, and forward e-Auctions.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

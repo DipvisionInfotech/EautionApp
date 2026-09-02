@@ -127,7 +127,7 @@ class Footer extends StatelessWidget {
         const SizedBox(height: 15),
         _contactItem(context, Icons.location_on, 'SLICK SALVAGE LLP HOUSE NO 1/A KH. NO. 31/9, G/F, BLK-D, DEEP VIHAR, Badli (North West Delhi), ROHINI SECTOR 24, Delhi, North West Delhi- 110042, Delhi, India'),
         const SizedBox(height: 15),
-        _contactItem(context, Icons.phone, '9709709992'),
+        _contactItem(context, Icons.phone, '+91 9311219522'),
         const SizedBox(height: 15),
         _contactItem(context, Icons.email, 'info@slicksalvage.com'),
       ],

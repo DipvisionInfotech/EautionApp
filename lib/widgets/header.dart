@@ -562,33 +562,42 @@ class _HeaderState extends State<Header> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFF0288D1),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.asset(
+                      'assets/images/logo.png',
+                      height: 42,
+                      width: 42,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 38,
+                        height: 38,
+                        decoration: const BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Color(0xFF0288D1),
+                        ),
+                        child: const Icon(Icons.gavel, color: Colors.white, size: 20),
+                      ),
                     ),
-                    child: const Icon(Icons.handshake, color: Colors.white, size: 18),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Flexible(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Slick Salvage',
+                          'Slick Salvage LLP',
                           style: TextStyle(
-                            fontSize: screenWidth > 600 ? 20 : 15,
+                            fontSize: screenWidth > 600 ? 18 : 15,
                             fontWeight: FontWeight.bold,
                             color: const Color(0xFF1A237E),
                           ),
                           overflow: TextOverflow.ellipsis,
                         ),
                         const Text(
-                          'Streamlining Salvage',
-                          style: TextStyle(fontSize: 9, color: Colors.grey),
+                          'Premier E-auction Platform',
+                          style: TextStyle(fontSize: 9.5, color: Colors.grey, fontWeight: FontWeight.w600),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],

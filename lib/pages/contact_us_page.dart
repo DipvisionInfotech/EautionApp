@@ -99,7 +99,7 @@ class ContactUsPage extends StatelessWidget {
             Icon(Icons.phone, size: 20),
             SizedBox(width: 10),
             Text(
-              '97097 09992',
+              '93112 19522',
               style: TextStyle(fontSize: 16),
             ),
           ],
