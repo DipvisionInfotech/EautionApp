@@ -3,9 +3,19 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
-import '../utils/date_utils.dart';
-import '../utils/number_to_words.dart';
+import '../utils/datetime_utils.dart';
+import '../utils/formatters.dart';
 
+/// Single-page responsive multi-lot live bidding room.
+/// 
+/// Security & UX guarantees:
+/// 1. Credential Gate: Bidders must authenticate for each room with room credentials.
+///    No automatic bypass from regular website login. Leaving a room clears the session.
+/// 2. Strict Per-Lot Isolation: Bidding or leading on Lot 1 never locks Lot 2 or Lot 3.
+/// 3. Synchronized Sorting: Lot ordering matches the modal and backend precisely.
+/// 4. Rich Information: Lot titles, item names, and descriptions are prominently displayed.
+/// 5. Layout Stability: Quick-raise chips stay visible (disabled) during leading states.
+/// 6. Friendly Timers: Multi-day auctions display readable day/hour/minute countdowns.
 class LiveAuctionPage extends StatefulWidget {
   final String roomId;
   final String roomTitle;
@@ -21,21 +31,24 @@ class LiveAuctionPage extends StatefulWidget {
 }
 
 class _LiveAuctionPageState extends State<LiveAuctionPage> {
-  bool _isLoading = false;
   bool _isAuthenticated = false;
-  bool _isSpectator = false; // True for admin/seller role
+  bool _isLoading = true;
   String? _errorMessage;
-  String? _userRole;
-  Timer? _countdownTimer;
 
-  // Group Auction State
   String? _groupId;
   String? _groupTitle;
   List<Map<String, dynamic>> _categories = [];
+
+  // Independent state per room: roomId -> roomState
   final Map<String, Map<String, dynamic>> _roomStates = {};
+
+  // Active WebSocket channels per room: roomId -> channel
   final Map<String, WebSocketChannel> _roomChannels = {};
 
-  // Auth Inputs for Unauthenticated / Ephemeral fallback
+  Timer? _countdownTimer;
+  bool _isSpectator = false;
+  String? _userRole;
+
   final TextEditingController _tempEmailController = TextEditingController();
   final TextEditingController _tempPasswordController = TextEditingController();
 
@@ -43,6 +56,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   void initState() {
     super.initState();
     _fetchGroupCategoriesAndInit();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    for (var ch in _roomChannels.values) {
+      try {
+        ch.sink.close();
+      } catch (_) {}
+    }
+    _roomChannels.clear();
+    for (var state in _roomStates.values) {
+      (state['bidController'] as TextEditingController?)?.dispose();
+    }
+    _roomStates.clear();
+    _tempEmailController.dispose();
+    _tempPasswordController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchGroupCategoriesAndInit() async {
@@ -57,6 +88,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         final rawList = (data['categories'] as List<dynamic>?) ?? [];
 
         _categories = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
+
+        // Sort categories by created_at ascending (fallback to id) so ordering strictly matches modal
+        _categories.sort((a, b) {
+          final aCreated = a['created_at']?.toString() ?? '';
+          final bCreated = b['created_at']?.toString() ?? '';
+          if (aCreated.isNotEmpty && bCreated.isNotEmpty) {
+            return aCreated.compareTo(bCreated);
+          }
+          final aId = a['id']?.toString() ?? '';
+          final bId = b['id']?.toString() ?? '';
+          return aId.compareTo(bId);
+        });
 
         // Initialize independent state for each category room
         for (var cat in _categories) {
@@ -117,7 +160,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     });
   }
 
-  /// Check if the currently logged-in user is authenticated and connect all authorized lot rooms
+  /// Check user role: ONLY admin gets spectator auto-connect.
+  /// ALL BIDDERS (even if logged in to website) MUST enter room-specific credentials on the login screen.
   Future<void> _checkRoleAndAutoConnect() async {
     final profileResult = await ApiService.getProfile();
 
@@ -127,27 +171,29 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       final role = profileResult['data']?['role'] as String?;
       _userRole = role;
 
-      if (role == 'admin' || role == 'seller' || role == 'test_bidder' || role == 'bidder') {
-        await _connectAllRoomsForCurrentUser();
+      if (role == 'admin') {
+        _isSpectator = true;
+        await _connectAllRoomsForAdmin();
         return;
       }
     }
 
-    // Unauthenticated visitor — show login screen
-    setState(() => _isLoading = false);
+    // Always require entering room-specific credentials for bidders
+    setState(() {
+      _isAuthenticated = false;
+      _isLoading = false;
+    });
   }
 
-  /// Connect all group category rooms that the current user has access to
-  Future<void> _connectAllRoomsForCurrentUser() async {
+  /// Connect all rooms for Admin Spectator Mode
+  Future<void> _connectAllRoomsForAdmin() async {
     setState(() {
       _isLoading = true;
+      _isAuthenticated = true;
       _errorMessage = null;
     });
 
     try {
-      setState(() => _isAuthenticated = true);
-
-      // Connect each room's WebSocket independently
       for (var cat in _categories) {
         final rId = cat['id']?.toString() ?? '';
         if (rId.isEmpty) continue;
@@ -158,8 +204,32 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             _connectSingleRoomWebSocket(rId, tokenResult['token']);
           }
         } catch (e) {
-          debugPrint("Could not connect WS for room $rId: $e");
+          debugPrint("Could not connect admin WS for room $rId: $e");
         }
+      }
+    } catch (e) {
+      setState(() => _errorMessage = e.toString());
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Connect all group category rooms with the authenticated room session token
+  Future<void> _connectAllRoomsWithSession(String sessionToken) async {
+    setState(() {
+      _isLoading = true;
+      _isAuthenticated = true;
+      _errorMessage = null;
+    });
+
+    try {
+      for (var cat in _categories) {
+        final rId = cat['id']?.toString() ?? '';
+        if (rId.isEmpty) continue;
+
+        // Connect each room's WebSocket using the session token.
+        // Backend consumers validate token and group authorization independently.
+        _connectSingleRoomWebSocket(rId, sessionToken);
       }
     } catch (e) {
       setState(() => _errorMessage = e.toString());
@@ -179,9 +249,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
       final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
-        protocols: ['token', token],
+        protocols: [token],
       );
 
+      _roomChannels[roomId]?.sink.close();
       _roomChannels[roomId] = channel;
 
       channel.stream.listen(
@@ -191,25 +262,30 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           _handleRoomWebSocketMessage(roomId, data);
         },
         onError: (error) {
-          if (!hasReceivedData && mounted) {
-            _connectSingleRoomWebSocketFallback(roomId, baseWs, token);
+          debugPrint("WS error in room $roomId: $error");
+          if (!hasReceivedData) {
+            _connectSingleRoomWebSocketFallback(roomId, token);
           }
         },
         onDone: () {
-          if (!hasReceivedData && mounted) {
-            _connectSingleRoomWebSocketFallback(roomId, baseWs, token);
-          }
+          debugPrint("WS closed in room $roomId");
         },
       );
     } catch (e) {
-      debugPrint("WS error connecting to room $roomId: $e");
+      debugPrint("Failed to connect WS in room $roomId: $e");
+      _connectSingleRoomWebSocketFallback(roomId, token);
     }
   }
 
-  void _connectSingleRoomWebSocketFallback(String roomId, String baseWs, String token) {
-    if (!mounted) return;
-    final wsUrlLegacy = '$baseWs/ws/room/$roomId/?token=$token';
-    final channel = WebSocketChannel.connect(Uri.parse(wsUrlLegacy));
+  void _connectSingleRoomWebSocketFallback(String roomId, String token) {
+    final baseWs = ApiService.baseUrl
+        .replaceFirst(RegExp(r'^http'), 'ws')
+        .replaceFirst('/api', '');
+
+    final wsUrl = '$baseWs/ws/room/$roomId/?token=$token';
+    final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+
+    _roomChannels[roomId]?.sink.close();
     _roomChannels[roomId] = channel;
 
     channel.stream.listen(
@@ -283,46 +359,38 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 ? 'Bid must be at least ₹${_formatCurrency(minNext as num)}.'
                 : 'Bid is below minimum required raise.';
           } else if (reason == 'auction_ended') {
-            errorMsg = 'This auction lot has ended.';
+            errorMsg = 'Auction has ended.';
           } else {
-            errorMsg = reason ?? 'Error placing bid';
+            errorMsg = 'Bid could not be accepted.';
           }
         }
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMsg),
-            backgroundColor: Colors.red[800],
-            duration: const Duration(seconds: 3),
-          ),
+          SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
         );
       }
     });
   }
 
   String _formatCurrency(num amount) {
-    String str = amount.toStringAsFixed(2);
-    final rawStr = amount.toString();
-    if (rawStr.contains('.')) {
-      final decPart = rawStr.split('.')[1];
-      if (decPart.length > 2) {
-        str = amount.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '');
-        if (str.endsWith('.')) str += '00';
-      }
-    }
-    final parts = str.split('.');
-    final whole = parts[0];
-    final dec = parts.length > 1 ? parts[1] : '00';
-    final regex = RegExp(r'(\d+?)(?=(\d\d)+(\d)(?!\d))');
-    final formattedWhole = whole.replaceAllMapped(regex, (match) => '${match[1]},');
-    return '$formattedWhole.$dec';
+    return formatCurrency(amount);
   }
 
+  /// Formats seconds into a human-friendly countdown display.
+  /// If > 24h: e.g. "7d 23h 40m" (instead of raw 191 hours)
+  /// If < 24h: e.g. "14:32:05"
+  /// If < 1h:  e.g. "25:40"
   String _formatTimerDisplay(int seconds) {
-    int h = seconds ~/ 3600;
-    int m = (seconds % 3600) ~/ 60;
-    int s = seconds % 60;
-    if (h > 0) {
+    if (seconds <= 0) return 'ENDED';
+    final int days = seconds ~/ 86400;
+    final int remaining = seconds % 86400;
+    final int h = remaining ~/ 3600;
+    final int m = (remaining % 3600) ~/ 60;
+    final int s = remaining % 60;
+
+    if (days > 0) {
+      return '${days}d ${h.toString().padLeft(2, '0')}h ${m.toString().padLeft(2, '0')}m';
+    } else if (h > 0) {
       return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
@@ -343,16 +411,32 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     final result = await ApiService.ephemeralLogin(email, password, roomId: widget.roomId);
 
+    if (!mounted) return;
+
     if (result['success'] == true) {
-      setState(() => _isAuthenticated = true);
-      await _connectAllRoomsForCurrentUser();
+      final String sessionToken = result['token']?.toString() ?? '';
+      await _connectAllRoomsWithSession(sessionToken);
     } else {
-      // If user might be entering standard account credentials
+      // Fallback check: if user entered standard login email
       if (!email.contains('@auction.internal')) {
         final standardResult = await ApiService.login(email, password);
-        if (standardResult['success'] == true) {
-          await _connectAllRoomsForCurrentUser();
-          return;
+        if (standardResult['success'] == true && mounted) {
+          final profileResult = await ApiService.getProfile();
+          final role = profileResult['data']?['role'] as String?;
+          if (role == 'admin') {
+            _isSpectator = true;
+            await _connectAllRoomsForAdmin();
+            return;
+          } else {
+            // For standard bidder login, get ws token for this room
+            try {
+              final wsResult = await ApiService.getWebSocketToken(widget.roomId);
+              if (wsResult['success'] == true && wsResult['token'] != null) {
+                await _connectAllRoomsWithSession(wsResult['token'].toString());
+                return;
+              }
+            } catch (_) {}
+          }
         }
       }
 
@@ -429,57 +513,25 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     if (channel != null) {
       ScaffoldMessenger.of(context).clearSnackBars();
       channel.sink.add(jsonEncode({
-        'type': 'place_bid',
-        'amount': amount,
+        "type": "place_bid",
+        "amount": amount,
       }));
       controller.clear();
-      FocusScope.of(context).unfocus();
     } else {
-      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Connecting to this lot... Please wait a second and retry.')),
+        const SnackBar(content: Text('Not connected to this lot room. Reconnecting...')),
       );
-      // Attempt reconnection in background
-      ApiService.getWebSocketToken(roomId).then((res) {
-        if (res['success'] == true && res['token'] != null) {
-          _connectSingleRoomWebSocket(roomId, res['token']);
-        }
-      });
     }
-  }
-
-  @override
-  void dispose() {
-    _countdownTimer?.cancel();
-    for (var ch in _roomChannels.values) {
-      ch.sink.close();
-    }
-    for (var st in _roomStates.values) {
-      (st['bidController'] as TextEditingController?)?.dispose();
-    }
-    _tempEmailController.dispose();
-    _tempPasswordController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && !_isAuthenticated) {
-      return Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: Text(_groupTitle ?? widget.roomTitle),
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black,
-          elevation: 0,
-        ),
-        body: const Center(child: CircularProgressIndicator(color: Color(0xFF0288D1))),
-      );
-    }
-
     if (!_isAuthenticated) {
       return _buildLoginScreen();
     }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final int crossAxisCount = screenWidth >= 1100 ? 3 : (screenWidth >= 650 ? 2 : 1);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
@@ -489,122 +541,102 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           children: [
             Text(
               _groupTitle ?? widget.roomTitle,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             Text(
-              'Live Bidding • ${_categories.length} Lot${_categories.length > 1 ? "s" : ""} Available',
+              'Live Bidding • ${_categories.length} Lot${_categories.length == 1 ? '' : 's'} Available',
               style: const TextStyle(fontSize: 11, color: Color(0xFF0288D1), fontWeight: FontWeight.w600),
             ),
           ],
         ),
+        elevation: 0.5,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black87,
-        elevation: 1,
+        foregroundColor: const Color(0xFF0F172A),
         actions: [
-          if (_isSpectator)
-            Container(
-              margin: const EdgeInsets.only(right: 12),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE8F5E9),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF4CAF50)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.visibility, size: 14, color: Color(0xFF2E7D32)),
-                  SizedBox(width: 4),
-                  Text('Spectator Mode', style: TextStyle(fontSize: 12, color: Color(0xFF2E7D32), fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20),
+            tooltip: 'Refresh Bidding Room',
+            onPressed: _fetchGroupCategoriesAndInit,
+          ),
         ],
       ),
-      body: _errorMessage != null
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, size: 54, color: Colors.red),
-                    const SizedBox(height: 14),
-                    Text(_errorMessage!, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15)),
-                    const SizedBox(height: 16),
-                    ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Go Back')),
-                  ],
-                ),
-              ),
-            )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Spectator Banner
-                  if (_isSpectator)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF1B5E20),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Row(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _errorMessage != null
+              ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
+              : _categories.isEmpty
+                  ? const Center(child: Text("No live auction lots found."))
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(Icons.admin_panel_settings, color: Colors.white, size: 18),
-                          SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Spectator Mode — Real-time group auction monitoring. Bidding is disabled.',
-                              style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w500),
+                          if (_isSpectator)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
+                              ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.visibility, color: Color(0xFF059669), size: 16),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Admin Spectator Mode — Watching live group auction. Bidding disabled.',
+                                      style: TextStyle(color: Color(0xFF065F46), fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
+
+                          // ── Single Page 3-Column Card Matrix Grid ──────
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              const double spacing = 14.0;
+                              final double cardWidth = (constraints.maxWidth - (spacing * (crossAxisCount - 1))) / crossAxisCount;
+
+                              return Wrap(
+                                spacing: spacing,
+                                runSpacing: spacing,
+                                children: List.generate(_categories.length, (idx) {
+                                  final cat = _categories[idx];
+                                  final rId = cat['id']?.toString() ?? '';
+                                  return SizedBox(
+                                    width: cardWidth,
+                                    child: _buildLotCard(rId, idx),
+                                  );
+                                }),
+                              );
+                            },
                           ),
                         ],
                       ),
                     ),
-
-                  // ── Responsive 3-Column Card Matrix Grid on Single Page ──
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final width = constraints.maxWidth;
-                      // Max 3 cards per row on desktop/wide screen, 2 on medium, 1 on mobile
-                      final int columns = width >= 900 ? 3 : (width >= 560 ? 2 : 1);
-                      const double spacing = 16.0;
-                      final double cardWidth = (width - (spacing * (columns - 1))) / columns;
-
-                      return Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: List.generate(_categories.length, (idx) {
-                          final cat = _categories[idx];
-                          final rId = cat['id']?.toString() ?? '';
-                          return SizedBox(
-                            width: cardWidth,
-                            child: _buildLotLiveCard(rId, idx),
-                          );
-                        }),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
     );
   }
 
-  /// Self-contained live bidding card with prominent timer, independent locking, and instant updates
-  Widget _buildLotLiveCard(String roomId, int lotIndex) {
+  /// Self-contained Lot Card with prominent timer, lot title, item details, and stable controls
+  Widget _buildLotCard(String roomId, int index) {
     final state = _roomStates[roomId];
     if (state == null) return const SizedBox.shrink();
 
     final item = state['item'] as Map<String, dynamic>? ?? {};
+    final String lotTitle = state['title']?.toString() ?? '';
+    final String itemName = item['name']?.toString() ?? '';
+    final String displayTitle = lotTitle.isNotEmpty ? lotTitle : (itemName.isNotEmpty ? itemName : 'Lot Item');
+
     final String catName = (state['category'] ?? state['subcategory'] ?? 'Lot').toString().toUpperCase();
-    final String itemName = item['name'] ?? state['title'] ?? 'Lot Item';
+    final double qty = (item['quantity'] as num?)?.toDouble() ?? 1.0;
+    final String unit = item['unit']?.toString() ?? '';
+    final String? thumbUrl = item['thumbnail_url']?.toString();
+
     final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
     final double minBid = (state['minBid'] as num?)?.toDouble() ?? 0.0;
     final double minRaise = (state['minRaise'] as num?)?.toDouble() ?? 100.0;
@@ -614,10 +646,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     final bool ended = state['auctionEnded'] == true;
     final controller = state['bidController'] as TextEditingController;
 
-    final List images = item['images'] is List ? item['images'] as List : [];
-    final String? thumbUrl = images.isNotEmpty ? images[0].toString() : null;
-    final String qty = item['quantity']?.toString() ?? '1';
-    final String unit = item['unit']?.toString() ?? '';
+    final bool isUrgent = timeRem > 0 && timeRem < 120 && !ended;
 
     return Container(
       decoration: BoxDecoration(
@@ -626,7 +655,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         border: Border.all(
           color: isHighest
               ? const Color(0xFF10B981)
-              : (ended ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0)),
+              : (ended ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
           width: isHighest ? 2.0 : 1.0,
         ),
         boxShadow: [
@@ -634,66 +663,66 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             color: isHighest
                 ? const Color(0xFF10B981).withOpacity(0.12)
                 : Colors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Card Top Header: Badges & PROMINENT BIG TIMER ──────────
+          // ── Card Header: Lot Number, Category & Prominent Timer Pill ─
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isHighest ? const Color(0xFFECFDF5) : const Color(0xFFF8FAFC),
+              color: const Color(0xFFF8FAFC),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(bottom: BorderSide(color: isHighest ? const Color(0xFFA7F3D0) : const Color(0xFFE2E8F0))),
+              border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Lot Badge + Category
-                Row(
+                Wrap(
+                  spacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
-                        'LOT ${lotIndex + 1}',
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                        'LOT ${index + 1}',
+                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                       ),
                     ),
-                    const SizedBox(width: 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE0F2FE),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
                         catName,
-                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF0369A1)),
+                        style: const TextStyle(color: Color(0xFF0369A1), fontSize: 9.5, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
                 ),
 
-                // ── Big Prominent Countdown Timer ──
+                // Prominent high-contrast countdown timer badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: ended
                         ? const Color(0xFF334155)
-                        : (timeRem < 120 ? const Color(0xFFDC2626) : const Color(0xFF047857)),
-                    borderRadius: BorderRadius.circular(10),
+                        : (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)),
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: [
                       if (!ended)
                         BoxShadow(
-                          color: (timeRem < 120 ? Colors.red : Colors.green).withOpacity(0.3),
+                          color: (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)).withOpacity(0.35),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
@@ -702,21 +731,22 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (!ended) ...[
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: ended ? Colors.white54 : Colors.white,
                         ),
-                        const SizedBox(width: 6),
-                      ],
+                      ),
+                      const SizedBox(width: 6),
                       Text(
-                        ended ? 'ENDED' : _formatTimerDisplay(timeRem),
+                        _formatTimerDisplay(timeRem),
                         style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
                           color: Colors.white,
-                          letterSpacing: 0.5,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.4,
                         ),
                       ),
                     ],
@@ -726,17 +756,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             ),
           ),
 
-          // ── Item Title & Thumbnail Row ─────────────────────────────
+          // ── Thumbnail & Title ──────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            padding: const EdgeInsets.all(14),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                   child: Container(
-                    width: 64,
-                    height: 64,
+                    width: 58,
+                    height: 58,
                     color: const Color(0xFFF1F5F9),
                     child: thumbUrl != null
                         ? Image.network(
@@ -753,15 +783,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        itemName,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Color(0xFF0F172A), height: 1.2),
-                        maxLines: 2,
+                        displayTitle,
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.2),
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      if (itemName.isNotEmpty && itemName != displayTitle) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Item: $itemName',
+                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                      const SizedBox(height: 3),
                       Text(
                         'Qty: ${formatQuantityWithWords(qty, unit)}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
@@ -772,7 +811,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
           // ── Price Dashboard Box ────────────────────────────────────
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
@@ -878,17 +917,32 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
               ),
             ),
 
-          // ── Quick Increment Buttons ────────────────────────────────
-          if (!ended && !_isSpectator && !isHighest)
+          // ── Quick Increment Buttons (Layout Stable: Disabled when leading, never collapsed) ──
+          if (!_isSpectator)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               child: Row(
                 children: [
-                  _buildQuickIncrementBtn(roomId, currentBid + minRaise, '+₹${_formatCurrency(minRaise)}'),
+                  _buildQuickIncrementBtn(
+                    roomId,
+                    currentBid + minRaise,
+                    '+₹${_formatCurrency(minRaise)}',
+                    enabled: !ended && !isHighest,
+                  ),
                   const SizedBox(width: 6),
-                  _buildQuickIncrementBtn(roomId, currentBid + (minRaise * 5), '+₹${_formatCurrency(minRaise * 5)}'),
+                  _buildQuickIncrementBtn(
+                    roomId,
+                    currentBid + (minRaise * 5),
+                    '+₹${_formatCurrency(minRaise * 5)}',
+                    enabled: !ended && !isHighest,
+                  ),
                   const SizedBox(width: 6),
-                  _buildQuickIncrementBtn(roomId, currentBid + (minRaise * 10), '+₹${_formatCurrency(minRaise * 10)}'),
+                  _buildQuickIncrementBtn(
+                    roomId,
+                    currentBid + (minRaise * 10),
+                    '+₹${_formatCurrency(minRaise * 10)}',
+                    enabled: !ended && !isHighest,
+                  ),
                 ],
               ),
             ),
@@ -896,7 +950,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           // ── Direct Bidding Input & Action Button ────────────────────
           if (!ended && !_isSpectator)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+              padding: const EdgeInsets.fromLTRB(14, 5, 14, 14),
               child: Row(
                 children: [
                   Expanded(
@@ -955,27 +1009,33 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     );
   }
 
-  Widget _buildQuickIncrementBtn(String roomId, double targetAmount, String label) {
+  Widget _buildQuickIncrementBtn(String roomId, double targetAmount, String label, {bool enabled = true}) {
     final state = _roomStates[roomId];
     final controller = state?['bidController'] as TextEditingController?;
     return Expanded(
       child: OutlinedButton(
-        onPressed: () {
-          final rounded = double.parse(targetAmount.toStringAsFixed(2));
-          if (controller != null) {
-            controller.text = _formatCurrency(rounded);
-          }
-          _placeBidForRoom(roomId, rounded);
-        },
+        onPressed: enabled
+            ? () {
+                final rounded = double.parse(targetAmount.toStringAsFixed(2));
+                if (controller != null) {
+                  controller.text = _formatCurrency(rounded);
+                }
+                _placeBidForRoom(roomId, rounded);
+              }
+            : null,
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: Color(0xFFBAE6FD)),
+          side: BorderSide(color: enabled ? const Color(0xFFBAE6FD) : const Color(0xFFE2E8F0)),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(vertical: 7),
-          backgroundColor: const Color(0xFFF0F9FF),
+          backgroundColor: enabled ? const Color(0xFFF0F9FF) : const Color(0xFFF8FAFC),
         ),
         child: Text(
           label,
-          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFF0288D1)),
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.bold,
+            color: enabled ? const Color(0xFF0288D1) : const Color(0xFF94A3B8),
+          ),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

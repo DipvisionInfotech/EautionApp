@@ -1431,7 +1431,19 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
     final screenWidth = MediaQuery.of(context).size.width;
     final dialogWidth = screenWidth > 1250 ? 1160.0 : (screenWidth > 900 ? 920.0 : (screenWidth * 0.96));
 
-    final firstLot = widget.lots.isNotEmpty ? widget.lots.first : null;
+    final sortedLots = List<Map<String, dynamic>>.from(widget.lots);
+    sortedLots.sort((a, b) {
+      final aCreated = a['created_at']?.toString() ?? '';
+      final bCreated = b['created_at']?.toString() ?? '';
+      if (aCreated.isNotEmpty && bCreated.isNotEmpty) {
+        return aCreated.compareTo(bCreated);
+      }
+      final aId = a['id']?.toString() ?? '';
+      final bId = b['id']?.toString() ?? '';
+      return aId.compareTo(bId);
+    });
+
+    final firstLot = sortedLots.isNotEmpty ? sortedLots.first : null;
     final start = firstLot?['scheduled_start'] != null
         ? DateTimeUtils.parseUtc(firstLot!['scheduled_start'].toString())
         : null;
@@ -1448,7 +1460,7 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
     final now = DateTime.now();
     int liveCount = 0;
     int endedCount = 0;
-    for (final lot in widget.lots) {
+    for (final lot in sortedLots) {
       final s = lot['status']?.toString() ?? 'upcoming';
       DateTime? lotEnd;
       if (lot['scheduled_end'] != null) {
@@ -1506,48 +1518,42 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                         Text(
                           widget.groupTitle,
                           style: const TextStyle(
+                            color: Colors.white,
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            letterSpacing: -0.3,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 3),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        const SizedBox(height: 4),
+                        Row(
                           children: [
                             Text(
-                              'Group ID: ${widget.groupId} • ${widget.lots.length} Lots',
-                              style: const TextStyle(fontSize: 12, color: Color(0xFFA7F3D0)),
+                              'Group ID: ${widget.groupId} • ${sortedLots.length} Lots',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.85),
+                                fontSize: 12,
+                              ),
                             ),
-                            if (liveCount > 0)
+                            if (liveCount > 0) ...[
+                              const SizedBox(width: 8),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.red.withOpacity(0.2),
-                                  border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+                                  color: const Color(0xFFDC2626),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
                                   '$liveCount LIVE',
-                                  style: const TextStyle(color: Color(0xFFFF8A80), fontSize: 10, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            if (endedCount > 0)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  '$endedCount ENDED',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 10, fontWeight: FontWeight.bold),
-                                ),
-                              ),
+                            ],
                           ],
                         ),
                       ],
@@ -1592,7 +1598,7 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                           _summaryPill(
                             Icons.inventory_2_outlined,
                             'Total Lots',
-                            '${widget.lots.length} Items / Lots',
+                            '${sortedLots.length} Items / Lots',
                           ),
                           _summaryPill(
                             Icons.verified_user_outlined,
@@ -1609,7 +1615,7 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          'Auction Lots (${widget.lots.length})',
+                          'Auction Lots (${sortedLots.length})',
                           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
                         ),
                         const Text(
@@ -1632,8 +1638,8 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                         return Wrap(
                           spacing: spacing,
                           runSpacing: spacing,
-                          children: List.generate(widget.lots.length, (idx) {
-                            final lot = widget.lots[idx];
+                          children: List.generate(sortedLots.length, (idx) {
+                            final lot = sortedLots[idx];
                             return SizedBox(
                               width: cardWidth,
                               child: _buildLotCard(
