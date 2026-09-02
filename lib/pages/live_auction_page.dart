@@ -6,6 +6,18 @@ import '../services/api_service.dart';
 import '../utils/date_utils.dart';
 import '../utils/number_to_words.dart';
 
+double _parseDouble(dynamic val, [double fallback = 0.0]) {
+  if (val == null) return fallback;
+  if (val is num) return val.toDouble();
+  return double.tryParse(val.toString()) ?? fallback;
+}
+
+int _parseInt(dynamic val, [int fallback = 0]) {
+  if (val == null) return fallback;
+  if (val is num) return val.toInt();
+  return int.tryParse(val.toString()) ?? fallback;
+}
+
 /// Single-page responsive multi-lot live bidding room.
 /// 
 /// Security & UX guarantees:
@@ -101,22 +113,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           return aId.compareTo(bId);
         });
 
-        // Initialize independent state for each category room
+        // Initialize independent state for each category room with safe type parsing
         for (var cat in _categories) {
           final rId = cat['id']?.toString() ?? '';
           if (rId.isEmpty) continue;
 
-          final minBid = (cat['item']?['min_bid'] as num?)?.toDouble() ?? 0.0;
-          final minRaise = (cat['item']?['min_raise'] as num?)?.toDouble() ?? 100.0;
-          final currentBid = (cat['current_bid'] as num?)?.toDouble() ?? minBid;
-          final timeRem = (cat['time_remaining_sec'] as num?)?.toInt() ?? 0;
+          final itemMap = (cat['item'] is Map) ? Map<String, dynamic>.from(cat['item'] as Map) : <String, dynamic>{};
+          final minBid = _parseDouble(itemMap['min_bid'] ?? cat['min_bid'], 0.0);
+          final minRaise = _parseDouble(itemMap['min_raise'] ?? cat['min_raise'], 100.0);
+          final currentBid = _parseDouble(cat['current_bid'], minBid);
+          final timeRem = _parseInt(cat['time_remaining_sec'], 0);
+          final winnerMap = (cat['winner'] is Map) ? (cat['winner'] as Map) : null;
 
           _roomStates[rId] = {
             'roomId': rId,
-            'title': cat['title'] ?? '',
-            'category': cat['category'] ?? '',
-            'subcategory': cat['subcategory'] ?? '',
-            'item': cat['item'] ?? {},
+            'title': cat['title']?.toString() ?? '',
+            'category': cat['category']?.toString() ?? '',
+            'subcategory': cat['subcategory']?.toString() ?? '',
+            'item': itemMap,
             'currentBid': currentBid,
             'minBid': minBid,
             'minRaise': minRaise,
@@ -124,16 +138,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             'isHighestBidder': false,
             'isFirstBid': (cat['bids_count'] ?? 0) == 0,
             'auctionEnded': cat['status'] == 'ended',
-            'winnerAlias': cat['winner']?['user_id'],
-            'winningBid': (cat['winner']?['bid_amount'] as num?)?.toDouble(),
+            'winnerAlias': cat['winner']?['user_id']?.toString(),
+            'winningBid': winnerMap != null ? _parseDouble(winnerMap['bid_amount'], 0.0) : null,
             'myAlias': null,
             'bidController': TextEditingController(),
             'isSpectator': false,
           };
         }
       }
-    } catch (e) {
-      debugPrint("Error loading group categories: $e");
+    } catch (e, stack) {
+      debugPrint("Error loading group categories: $e\n$stack");
     }
 
     _startGlobalCountdownTimer();
@@ -306,10 +320,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
     setState(() {
       if (type == 'room_state') {
-        state['currentBid'] = (data['current_bid'] as num?)?.toDouble() ?? state['currentBid'];
-        state['minBid'] = (data['min_bid'] as num?)?.toDouble() ?? state['minBid'];
-        state['minRaise'] = (data['min_raise'] as num?)?.toDouble() ?? state['minRaise'];
-        state['timeRemainingSec'] = (data['time_remaining_sec'] as num?)?.toInt() ?? state['timeRemainingSec'];
+        if (data['current_bid'] != null) state['currentBid'] = _parseDouble(data['current_bid'], state['currentBid']);
+        if (data['min_bid'] != null) state['minBid'] = _parseDouble(data['min_bid'], state['minBid']);
+        if (data['min_raise'] != null) state['minRaise'] = _parseDouble(data['min_raise'], state['minRaise']);
+        if (data['time_remaining_sec'] != null) state['timeRemainingSec'] = _parseInt(data['time_remaining_sec'], state['timeRemainingSec']);
         state['isHighestBidder'] = data['is_highest_bidder'] == true;
         state['isFirstBid'] = data['is_first_bid'] == true;
 
@@ -322,7 +336,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           state['isSpectator'] = true;
         }
       } else if (type == 'new_bid') {
-        final double newAmt = (data['amount'] as num?)?.toDouble() ?? 0.0;
+        final double newAmt = _parseDouble(data['amount'], 0.0);
         final String newAlias = data['bidder_alias']?.toString() ?? 'Unknown';
 
         state['currentBid'] = newAmt;
@@ -332,7 +346,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             (state['myAlias'] != null && newAlias == state['myAlias']);
       } else if (type == 'countdown_tick') {
         if (state['auctionEnded'] != true) {
-          final secs = (data['seconds_remaining'] as num?)?.toInt() ?? state['timeRemainingSec'];
+          final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
           state['timeRemainingSec'] = secs;
           if (secs == 0) {
             state['auctionEnded'] = true;
@@ -341,7 +355,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       } else if (type == 'auction_ended') {
         state['auctionEnded'] = true;
         state['winnerAlias'] = data['winner_alias']?.toString();
-        state['winningBid'] = (data['winning_bid'] as num?)?.toDouble();
+        state['winningBid'] = _parseDouble(data['winning_bid'], 0.0);
       } else if (type == 'error' || type == 'bid_rejected') {
         String errorMsg = data['message']?.toString() ?? '';
         if (errorMsg.isEmpty) {
@@ -351,12 +365,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           } else if (reason == 'first_bid_cap_exceeded') {
             final maxFirst = data['max_first_bid'];
             errorMsg = maxFirst != null
-                ? 'The 1st bid cannot exceed ₹${_formatCurrency(maxFirst as num)} (10x starting price).'
+                ? 'The 1st bid cannot exceed ₹${_formatCurrency(_parseDouble(maxFirst))} (10x starting price).'
                 : '1st bid cannot exceed 10x starting price.';
           } else if (reason == 'below_minimum') {
             final minNext = data['min_next_bid'];
             errorMsg = minNext != null
-                ? 'Bid must be at least ₹${_formatCurrency(minNext as num)}.'
+                ? 'Bid must be at least ₹${_formatCurrency(_parseDouble(minNext))}.'
                 : 'Bid is below minimum required raise.';
           } else if (reason == 'auction_ended') {
             errorMsg = 'Auction has ended.';
@@ -483,7 +497,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       amount = double.parse(amount.toStringAsFixed(2));
     }
 
-    final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
+    final double currentBid = _parseDouble(state['currentBid'], 0.0);
     if (amount == null || amount <= currentBid) {
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -493,7 +507,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     }
 
     // 1st Bid Capping check (10x starting price)
-    final double startingPrice = (state['minBid'] as num?)?.toDouble() ?? 0.0;
+    final double startingPrice = _parseDouble(state['minBid'], 0.0);
     final bool isFirst = state['isFirstBid'] == true;
     if (isFirst && startingPrice > 0) {
       final maxFirst = startingPrice * 10;
@@ -600,7 +614,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                           LayoutBuilder(
                             builder: (context, constraints) {
                               const double spacing = 14.0;
-                              final double cardWidth = (constraints.maxWidth - (spacing * (crossAxisCount - 1))) / crossAxisCount;
+                              final double calcWidth = (constraints.maxWidth - (spacing * (crossAxisCount - 1))) / crossAxisCount;
+                              final double cardWidth = calcWidth > 260.0 ? calcWidth : constraints.maxWidth;
 
                               return Wrap(
                                 spacing: spacing,
@@ -625,26 +640,41 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   /// Self-contained Lot Card with prominent timer, lot title, item details, and stable controls
   Widget _buildLotCard(String roomId, int index) {
     final state = _roomStates[roomId];
-    if (state == null) return const SizedBox.shrink();
+    if (state == null) {
+      return Container(
+        height: 220,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      );
+    }
 
-    final item = state['item'] as Map<String, dynamic>? ?? {};
+    final item = (state['item'] is Map) ? (state['item'] as Map) : {};
     final String lotTitle = state['title']?.toString() ?? '';
     final String itemName = item['name']?.toString() ?? '';
     final String displayTitle = lotTitle.isNotEmpty ? lotTitle : (itemName.isNotEmpty ? itemName : 'Lot Item');
 
     final String catName = (state['category'] ?? state['subcategory'] ?? 'Lot').toString().toUpperCase();
-    final double qty = (item['quantity'] as num?)?.toDouble() ?? 1.0;
+    final dynamic rawQty = item['quantity'];
     final String unit = item['unit']?.toString() ?? '';
     final String? thumbUrl = item['thumbnail_url']?.toString();
 
-    final double currentBid = (state['currentBid'] as num?)?.toDouble() ?? 0.0;
-    final double minBid = (state['minBid'] as num?)?.toDouble() ?? 0.0;
-    final double minRaise = (state['minRaise'] as num?)?.toDouble() ?? 100.0;
-    final int timeRem = (state['timeRemainingSec'] as int?) ?? 0;
+    final double currentBid = _parseDouble(state['currentBid'], 0.0);
+    final double minBid = _parseDouble(state['minBid'], 0.0);
+    final double minRaise = _parseDouble(state['minRaise'], 100.0);
+    final int timeRem = _parseInt(state['timeRemainingSec'], 0);
     final bool isHighest = state['isHighestBidder'] == true;
     final bool isFirst = state['isFirstBid'] == true;
     final bool ended = state['auctionEnded'] == true;
-    final controller = state['bidController'] as TextEditingController;
+    final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
 
     final bool isUrgent = timeRem > 0 && timeRem < 120 && !ended;
 
@@ -674,10 +704,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           // ── Card Header: Lot Number, Category & Prominent Timer Pill ─
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-              border: const Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: Color(0xFFF1F5F9))),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -799,7 +829,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                       ],
                       const SizedBox(height: 3),
                       Text(
-                        'Qty: ${formatQuantityWithWords(qty, unit)}',
+                        'Qty: ${formatQuantityWithWords(rawQty ?? '1', unit)}',
                         style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                       ),
                     ],
