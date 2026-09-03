@@ -169,6 +169,46 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
     }
   }
 
+  String _extractErrorMessage(dynamic error, {String fallback = 'Could not process your request. Please try again.'}) {
+    if (error == null) return fallback;
+    if (error is String) {
+      final trimmed = error.trim();
+      return trimmed.isNotEmpty ? trimmed : fallback;
+    }
+    if (error is Map) {
+      if (error['error'] != null) {
+        return _extractErrorMessage(error['error'], fallback: fallback);
+      }
+      if (error['message'] != null) {
+        return _extractErrorMessage(error['message'], fallback: fallback);
+      }
+      if (error['detail'] != null) {
+        return _extractErrorMessage(error['detail'], fallback: fallback);
+      }
+      if (error['non_field_errors'] != null) {
+        return _extractErrorMessage(error['non_field_errors'], fallback: fallback);
+      }
+      final List<String> errorParts = [];
+      error.forEach((key, val) {
+        final extracted = _extractErrorMessage(val, fallback: '');
+        if (extracted.isNotEmpty) {
+          errorParts.add(key == 'error' || key == 'detail' || key == 'message' ? extracted : '$key: $extracted');
+        }
+      });
+      if (errorParts.isNotEmpty) {
+        return errorParts.join('\n');
+      }
+    }
+    if (error is List) {
+      final nonNullItems = error.where((e) => e != null && e.toString().trim().isNotEmpty).toList();
+      if (nonNullItems.isNotEmpty) {
+        return nonNullItems.map((e) => _extractErrorMessage(e, fallback: '')).where((s) => s.isNotEmpty).join('\n');
+      }
+    }
+    final s = error.toString().trim();
+    return s.isNotEmpty ? s : fallback;
+  }
+
   Future<void> _sendEnquiry() async {
     if (_formKey.currentState!.validate()) {
       setState(() => _isSending = true);
@@ -180,6 +220,7 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
 
         bool success = false;
         String successMessage = '';
+        String errorMessage = '';
 
         if (_isLoggedIn && _requestType == 'bidding') {
           if (widget.auctionId == null || widget.auctionId!.isEmpty) {
@@ -199,6 +240,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           );
           success = result['success'] == true;
           successMessage = 'Your request to participate in bidding has been submitted for approval!';
+          if (!success) {
+            errorMessage = _extractErrorMessage(result['error']);
+          }
         } else {
           // General Query (Guest or Logged-In)
           final result = await ApiService.submitEnquiry(
@@ -210,6 +254,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           );
           success = result['success'] == true;
           successMessage = 'Thank you for your interest! Your query has been submitted successfully.';
+          if (!success) {
+            errorMessage = _extractErrorMessage(result['error']);
+          }
         }
 
         if (!mounted) return;
@@ -226,7 +273,9 @@ class _EnquiryDialogState extends State<EnquiryDialog> {
           GeminiInfoDialog.show(
             context,
             'Submission Failed',
-            'Could not process your request. Please ensure you have completed your profile / KYC and try again.',
+            errorMessage.isNotEmpty
+                ? errorMessage
+                : 'Could not process your request. Please try again.',
           );
         }
       } catch (e) {
