@@ -46,6 +46,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   bool _isAuthenticated = false;
   bool _isLoading = true;
   String? _errorMessage;
+  String? _loginErrorMessage;
 
   String? _groupId;
   String? _groupTitle;
@@ -65,6 +66,40 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
   final TextEditingController _tempEmailController = TextEditingController();
   final TextEditingController _tempPasswordController = TextEditingController();
+
+  String _extractErrorMessage(dynamic error, {String fallback = 'These bidding credentials are not authorized for this auction room.'}) {
+    if (error == null) return fallback;
+    if (error is String) {
+      final trimmed = error.trim();
+      return trimmed.isNotEmpty ? trimmed : fallback;
+    }
+    if (error is Map) {
+      if (error['error'] != null) {
+        return _extractErrorMessage(error['error'], fallback: fallback);
+      }
+      if (error['detail'] != null) {
+        return _extractErrorMessage(error['detail'], fallback: fallback);
+      }
+      if (error['message'] != null) {
+        return _extractErrorMessage(error['message'], fallback: fallback);
+      }
+      if (error['non_field_errors'] != null) {
+        return _extractErrorMessage(error['non_field_errors'], fallback: fallback);
+      }
+      final firstVal = error.values.firstOrNull;
+      if (firstVal != null) {
+        return _extractErrorMessage(firstVal, fallback: fallback);
+      }
+    }
+    if (error is List) {
+      final nonNullItems = error.where((e) => e != null && e.toString().trim().isNotEmpty).toList();
+      if (nonNullItems.isNotEmpty) {
+        return _extractErrorMessage(nonNullItems.first, fallback: fallback);
+      }
+    }
+    final s = error.toString().trim();
+    return s.isNotEmpty ? s : fallback;
+  }
 
   @override
   void initState() {
@@ -493,13 +528,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     final password = _tempPasswordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
+      setState(() => _loginErrorMessage = 'Both email and password are required.');
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Both email and password are required.')),
       );
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loginErrorMessage = null;
+    });
 
     final result = await ApiService.ephemeralLogin(email, password, roomId: widget.roomId);
 
@@ -509,7 +549,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       final String sessionToken = result['token']?.toString() ?? '';
       _sessionToken = sessionToken;
 
-      final approvedList = result['approved_room_ids'] as List?;
+      final approvedList = (result['approved_room_ids'] ?? result['approvedRoomIds']) as List?;
       if (approvedList != null && approvedList.isNotEmpty) {
         _approvedRoomIds = approvedList.map((e) => e.toString()).toSet();
       }
@@ -526,6 +566,37 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         }).toList();
       }
 
+      // STRICT VALIDATION: If this bidder has NO approved lots in this group auction room,
+      // stop them at the login screen immediately and do NOT proceed into the bidding room.
+      final validCategories = _categories.where((cat) {
+        if (_isSpectator) return true;
+        final rId = cat['id']?.toString() ?? '';
+        if (_approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
+          return _approvedRoomIds!.contains(rId);
+        }
+        return cat['is_approved'] == true;
+      }).toList();
+
+      if (!_isSpectator && validCategories.isEmpty) {
+        setState(() {
+          _isLoading = false;
+          _isAuthenticated = false;
+          _sessionToken = null;
+          _approvedRoomIds = null;
+          _loginErrorMessage = 'These bidding credentials are not authorized for this auction room.';
+        });
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('These bidding credentials are not authorized for this auction room.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+
+      _loginErrorMessage = null;
       await _connectAllRoomsWithSession(sessionToken);
     } else {
       // Fallback check: if user entered standard login email
@@ -546,11 +617,31 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             _categories = _categories.where((cat) => cat['is_approved'] == true).toList();
             _approvedRoomIds = _categories.map((c) => c['id']?.toString() ?? '').where((id) => id.isNotEmpty).toSet();
 
+            if (_categories.isEmpty) {
+              setState(() {
+                _isLoading = false;
+                _isAuthenticated = false;
+                _sessionToken = null;
+                _approvedRoomIds = null;
+                _loginErrorMessage = 'These bidding credentials are not authorized for this auction room.';
+              });
+              ScaffoldMessenger.of(context).clearSnackBars();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('These bidding credentials are not authorized for this auction room.'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+              return;
+            }
+
             try {
               final wsResult = await ApiService.getWebSocketToken(widget.roomId);
               if (wsResult['success'] == true && wsResult['token'] != null) {
                 final wsToken = wsResult['token'].toString();
                 _sessionToken = wsToken;
+                _loginErrorMessage = null;
                 await _connectAllRoomsWithSession(wsToken);
                 return;
               }
@@ -559,11 +650,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         }
       }
 
-      setState(() => _isLoading = false);
+      final errorMsg = _extractErrorMessage(result['error']);
+      setState(() {
+        _isLoading = false;
+        _loginErrorMessage = errorMsg;
+      });
+      ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['error']?.toString() ?? 'Invalid credentials or room access expired.'),
+          content: Text(errorMsg),
           backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -674,6 +771,11 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
       }
       return cat['is_approved'] == true;
     }).toList();
+
+    if (!_isSpectator && validCategories.isEmpty) {
+      _loginErrorMessage ??= 'These bidding credentials are not authorized for this auction room.';
+      return _buildLoginScreen();
+    }
 
     // Classify lots strictly: LIVE, UPCOMING, and ENDED from approved lots
     final liveLots = validCategories.where((cat) {
@@ -1590,6 +1692,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 const SizedBox(height: 32),
                 TextField(
                   controller: _tempEmailController,
+                  onChanged: (_) {
+                    if (_loginErrorMessage != null) setState(() => _loginErrorMessage = null);
+                  },
                   decoration: InputDecoration(
                     labelText: 'Bidder Email / ID',
                     prefixIcon: const Icon(Icons.email_outlined),
@@ -1599,6 +1704,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 const SizedBox(height: 16),
                 TextField(
                   controller: _tempPasswordController,
+                  onChanged: (_) {
+                    if (_loginErrorMessage != null) setState(() => _loginErrorMessage = null);
+                  },
                   obscureText: true,
                   decoration: InputDecoration(
                     labelText: 'Password',
@@ -1618,6 +1726,35 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
                       : const Text('Enter Live Bidding Room', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                 ),
+                if (_loginErrorMessage != null && _loginErrorMessage!.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFFCA5A5)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.error_outline_rounded, color: Color(0xFFDC2626), size: 18),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _loginErrorMessage!,
+                            style: const TextStyle(
+                              color: Color(0xFFB91C1C),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

@@ -669,7 +669,8 @@ class ApiService {
           'success': true,
           'token': data['token'],
           'roomId': data['room_id'],
-          'userId': data['user_id']
+          'userId': data['user_id'],
+          'approved_room_ids': data['approved_room_ids'],
         };
       } else {
         return {'success': false, 'error': jsonDecode(response.body)};
