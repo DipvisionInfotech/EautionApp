@@ -1190,13 +1190,24 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                   int totalLots = widget.item.lots.length;
                   int liveLots = 0;
                   int endedLots = 0;
+                  final nowUtc = now.toUtc();
                   for (final lot in widget.item.lots) {
-                    final s = lot['status']?.toString() ?? 'upcoming';
+                    final s = (lot['status']?.toString() ?? 'upcoming').toLowerCase().trim();
                     DateTime? lotEnd;
-                    if (lot['scheduled_end'] != null) {
-                      lotEnd = DateTimeUtils.parseUtc(lot['scheduled_end'].toString());
+                    final dynamic rawEnd = lot['scheduled_end'] ??
+                        lot['scheduledEnd'] ??
+                        lot['end_time'] ??
+                        lot['endTime'] ??
+                        widget.item.endTime;
+                    if (rawEnd != null) {
+                      final e = rawEnd is DateTime ? rawEnd.toUtc() : DateTimeUtils.parseUtc(rawEnd.toString());
+                      if (e.millisecondsSinceEpoch > 0) {
+                        lotEnd = e;
+                      }
                     }
-                    if (s == 'ended' || (lotEnd != null && (now.isAfter(lotEnd) || now.isAtSameMomentAs(lotEnd)))) {
+                    final bool isExpired = lotEnd != null && (nowUtc.isAfter(lotEnd) || nowUtc.isAtSameMomentAs(lotEnd));
+                    final bool isEnded = isExpired || s == 'ended' || s == 'completed' || s == 'expired' || s == 'cancelled' || s == 'closed';
+                    if (isEnded) {
                       endedLots++;
                     } else if (s == 'live') {
                       liveLots++;
@@ -1491,15 +1502,26 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
         : (double.tryParse(regFee?['amount']?.toString() ?? '') ?? 0.0);
 
     final now = DateTime.now();
+    final nowUtc = now.toUtc();
     int liveCount = 0;
     int endedCount = 0;
     for (final lot in sortedLots) {
-      final s = lot['status']?.toString() ?? 'upcoming';
+      final s = (lot['status']?.toString() ?? 'upcoming').toLowerCase().trim();
       DateTime? lotEnd;
-      if (lot['scheduled_end'] != null) {
-        lotEnd = DateTimeUtils.parseUtc(lot['scheduled_end'].toString());
+      final dynamic rawEnd = lot['scheduled_end'] ??
+          lot['scheduledEnd'] ??
+          lot['end_time'] ??
+          lot['endTime'] ??
+          end;
+      if (rawEnd != null) {
+        final e = rawEnd is DateTime ? rawEnd.toUtc() : DateTimeUtils.parseUtc(rawEnd.toString());
+        if (e.millisecondsSinceEpoch > 0) {
+          lotEnd = e;
+        }
       }
-      if (s == 'ended' || s == 'completed' || (lotEnd != null && (now.isAfter(lotEnd) || now.isAtSameMomentAs(lotEnd)))) {
+      final bool isExpired = lotEnd != null && (nowUtc.isAfter(lotEnd) || nowUtc.isAtSameMomentAs(lotEnd));
+      final bool isEnded = isExpired || s == 'ended' || s == 'completed' || s == 'expired' || s == 'cancelled' || s == 'closed';
+      if (isEnded) {
         endedCount++;
       } else if (s == 'live') {
         liveCount++;
@@ -1682,6 +1704,8 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                                 now: now,
                                 isEmdRequired: isEmdRequired,
                                 emdAmount: emdAmount,
+                                groupStart: start,
+                                groupEnd: end,
                               ),
                             );
                           }),
@@ -1745,6 +1769,8 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
     required DateTime now,
     required bool isEmdRequired,
     required double emdAmount,
+    DateTime? groupStart,
+    DateTime? groupEnd,
   }) {
     final item = lot['item'] as Map<String, dynamic>?;
     final lotTitle = lot['title']?.toString() ?? 'Lot ${idx + 1}';
@@ -1761,26 +1787,69 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
     // Timings & Status
     DateTime? lotStart;
     DateTime? lotEnd;
-    if (lot['scheduled_start'] != null) {
-      lotStart = DateTimeUtils.parseUtc(lot['scheduled_start'].toString());
+
+    final dynamic rawStart = lot['scheduled_start'] ??
+        lot['scheduledStart'] ??
+        lot['start_time'] ??
+        lot['startTime'] ??
+        lot['scheduled_start_time'] ??
+        groupStart;
+
+    final dynamic rawEnd = lot['scheduled_end'] ??
+        lot['scheduledEnd'] ??
+        lot['end_time'] ??
+        lot['endTime'] ??
+        lot['scheduled_end_time'] ??
+        groupEnd;
+
+    if (rawStart != null) {
+      if (rawStart is DateTime) {
+        lotStart = rawStart.toUtc();
+      } else {
+        final s = DateTimeUtils.parseUtc(rawStart.toString());
+        if (s.millisecondsSinceEpoch > 0) {
+          lotStart = s;
+        }
+      }
     }
-    if (lot['scheduled_end'] != null) {
-      lotEnd = DateTimeUtils.parseUtc(lot['scheduled_end'].toString());
+    if (rawEnd != null) {
+      if (rawEnd is DateTime) {
+        lotEnd = rawEnd.toUtc();
+      } else {
+        final e = DateTimeUtils.parseUtc(rawEnd.toString());
+        if (e.millisecondsSinceEpoch > 0) {
+          lotEnd = e;
+        }
+      }
     }
 
-    final rawStatus = lot['status']?.toString() ?? 'upcoming';
-    final isExpired = lotEnd != null && (now.isAfter(lotEnd) || now.isAtSameMomentAs(lotEnd));
-    final lotStatus = (isExpired || rawStatus == 'ended' || rawStatus == 'completed') ? 'ended' : rawStatus;
+    final rawStatus = (lot['status']?.toString() ?? 'upcoming').toLowerCase().trim();
+    final nowUtc = now.toUtc();
+    final bool isExpired = lotEnd != null && (nowUtc.isAfter(lotEnd.toUtc()) || nowUtc.isAtSameMomentAs(lotEnd.toUtc()));
+    final bool isStatusEnded = rawStatus == 'ended' ||
+        rawStatus == 'completed' ||
+        rawStatus == 'expired' ||
+        rawStatus == 'cancelled' ||
+        rawStatus == 'closed' ||
+        lot['is_ended'] == true ||
+        lot['isEnded'] == true;
+
+    final bool lotIsEnded = isExpired || isStatusEnded;
+    final String lotStatus = lotIsEnded ? 'ended' : rawStatus;
 
     final lotVisibility = lot['visibility']?.toString() ?? 'public';
     final lotIsApproved = lot['is_approved'] == true;
     final lotIsTester = lot['is_tester'] == true;
-    final lotIsLive = lotStatus == 'live' || (lotStart != null && now.isAfter(lotStart) && !isExpired && rawStatus != 'ended');
-    final lotIsEnded = lotStatus == 'ended';
     final lotIsPrivate = lotVisibility == 'members_only';
     final lotIsAccessible = !lotIsPrivate || lotIsApproved || lotIsTester;
-    final canBid = lotIsLive && lotIsAccessible;
-    final isLocked = lotIsPrivate && !lotIsApproved && !lotIsTester;
+
+    final bool lotIsLive = !lotIsEnded && (
+        lotStatus == 'live' ||
+        (lotStart != null && nowUtc.isAfter(lotStart.toUtc()) && (lotEnd == null || nowUtc.isBefore(lotEnd.toUtc())))
+    );
+
+    final canBid = !lotIsEnded && lotIsLive && lotIsAccessible;
+    final isLocked = !lotIsEnded && lotIsPrivate && !lotIsApproved && !lotIsTester;
 
     // Timer string & display text
     final timerString = _formatLotCountdown(lotStart, lotEnd, lotStatus, now);
@@ -1962,8 +2031,8 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                 ],
                 const SizedBox(height: 10),
 
-                // Joining Fee Badge (if configured)
-                if (lotFeeRequired && lotFeeAmount > 0) ...[
+                // Joining Fee Badge (if configured and lot is not ended)
+                if (lotFeeRequired && lotFeeAmount > 0 && !lotIsEnded) ...[
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.only(bottom: 8),
@@ -2017,22 +2086,52 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // Action Buttons (View Details + Bid / Interest / Request)
+                // Action Buttons (View Details + Bid / Interest / Request or Ended)
                 SizedBox(
                   width: double.infinity,
                   child: lotIsEnded
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: const Text(
-                            'Auction Ended',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-                          ),
+                      ? Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  AuctionDetailDialog.show(context, lotRoomId);
+                                },
+                                icon: const Icon(Icons.info_outline_rounded, size: 13),
+                                label: const Text('View Details', overflow: TextOverflow.ellipsis),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF0288D1),
+                                  side: const BorderSide(color: Color(0xFFBAE6FD)),
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 8.5),
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: const Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.timer_off_outlined, size: 13, color: Color(0xFF64748B)),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Ended',
+                                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         )
                       : canBid
                           ? Row(
@@ -2179,7 +2278,7 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
 
   // ── Helper Widgets ───────────────────────────────────────────────────────────
   Widget _buildTimerBadge(bool isLive, bool isEnded, bool isLocked, String timerText) {
-    if (isEnded) {
+    if (isEnded || timerText == 'ENDED') {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
         decoration: BoxDecoration(
@@ -2237,12 +2336,13 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
   }
 
   String _formatLotCountdown(DateTime? start, DateTime? end, String lotStatus, DateTime now) {
-    if (lotStatus == 'ended' || (end != null && (now.isAfter(end) || now.isAtSameMomentAs(end)))) {
+    final nowUtc = now.toUtc();
+    if (lotStatus == 'ended' || (end != null && (nowUtc.isAfter(end.toUtc()) || nowUtc.isAtSameMomentAs(end.toUtc())))) {
       return 'ENDED';
     }
-    if (lotStatus == 'live' || (start != null && now.isAfter(start) && end != null && now.isBefore(end))) {
+    if (lotStatus == 'live' || (start != null && nowUtc.isAfter(start.toUtc()) && end != null && nowUtc.isBefore(end.toUtc()))) {
       if (end != null) {
-        final diff = end.difference(now);
+        final diff = end.toUtc().difference(nowUtc);
         if (!diff.isNegative && diff > Duration.zero) {
           final hours = diff.inHours.toString().padLeft(2, '0');
           final mins = (diff.inMinutes % 60).toString().padLeft(2, '0');
@@ -2252,8 +2352,8 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
       }
       return 'LIVE';
     }
-    if (start != null && now.isBefore(start)) {
-      final diff = start.difference(now);
+    if (start != null && nowUtc.isBefore(start.toUtc())) {
+      final diff = start.toUtc().difference(nowUtc);
       if (diff.inDays > 0) {
         return '${diff.inDays}d ${(diff.inHours % 24)}h';
       } else if (diff.inHours > 0) {

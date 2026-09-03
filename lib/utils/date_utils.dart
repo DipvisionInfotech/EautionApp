@@ -5,13 +5,18 @@ class DateTimeUtils {
 
   /// Parses a UTC timestamp string from backend, ensuring proper UTC timezone interpretation.
   static DateTime parseUtc(String? dateTimeStr) {
-    if (dateTimeStr == null || dateTimeStr.isEmpty) {
-      return DateTime.now().toUtc();
+    if (dateTimeStr == null || dateTimeStr.isEmpty || dateTimeStr == 'null') {
+      return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
     }
     String formatted = dateTimeStr.trim();
     
+    // Convert space between date and time to 'T' for ISO-8601 compliance
+    if (formatted.length >= 19 && formatted[10] == ' ') {
+      formatted = '${formatted.substring(0, 10)}T${formatted.substring(11)}';
+    }
+
     // Check if the string already has a timezone indicator (ends with Z, or contains +/- offset after date prefix)
-    bool hasTimezone = formatted.endsWith('Z');
+    bool hasTimezone = formatted.endsWith('Z') || formatted.endsWith('z');
     if (!hasTimezone && formatted.length > 10) {
       String timePart = formatted.substring(10);
       if (timePart.contains('+') || timePart.contains('-')) {
@@ -27,7 +32,11 @@ class DateTimeUtils {
     try {
       return DateTime.parse(formatted).toUtc();
     } catch (e) {
-      return DateTime.now().toUtc();
+      try {
+        return DateTime.parse(dateTimeStr.trim()).toUtc();
+      } catch (_) {
+        return DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+      }
     }
   }
 
