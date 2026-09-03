@@ -212,9 +212,18 @@ class AuctionDisplayItem {
       type = 'Public Auction';
     }
 
-    final regFee = first['registration_fee'] as Map<String, dynamic>?;
-    final isEmdRequired = regFee?['required'] == true;
-    final emdAmount = double.tryParse(regFee?['amount']?.toString() ?? '') ?? 0.0;
+    bool isEmdRequired = false;
+    double emdAmount = 0.0;
+    for (final l in lots) {
+      final rf = l['registration_fee'] as Map<String, dynamic>?;
+      if (rf?['required'] == true) {
+        isEmdRequired = true;
+        final amt = double.tryParse(rf?['amount']?.toString() ?? '') ?? 0.0;
+        if (amt > emdAmount) {
+          emdAmount = amt;
+        }
+      }
+    }
 
     return AuctionDisplayItem(
       isGroup: true,
@@ -751,6 +760,8 @@ class _AuctionCardState extends State<AuctionCard> {
                         _infoRow('Auction Type', widget.type, isBadge: true),
                         _infoRow('Start Time', _formatDateTime(widget.startTime)),
                         _infoRow('End Time', _formatDateTime(widget.endTime)),
+                        if (widget.isEmdRequired && widget.emdAmount > 0)
+                          _infoRow('Joining Fee', formatCurrency(widget.emdAmount), isBadge: true, badgeColor: const Color(0xFF059669)),
                         if (widget.qty.isNotEmpty)
                           _infoRow('Quantity', formatQuantityWithWords(widget.qty, widget.unit)),
                       ],
@@ -874,7 +885,7 @@ class _AuctionCardState extends State<AuctionCard> {
     );
   }
 
-  Widget _infoRow(String label, String value, {bool isBadge = false}) {
+  Widget _infoRow(String label, String value, {bool isBadge = false, Color? badgeColor}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 5.0),
       child: Row(
@@ -896,7 +907,7 @@ class _AuctionCardState extends State<AuctionCard> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0288D1),
+                  color: badgeColor ?? const Color(0xFF0288D1),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -1137,6 +1148,8 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
                         const SizedBox(height: 5),
                         _infoRow('Start Time', _formatDateTime(widget.item.startTime)),
                         _infoRow('End Time', _formatDateTime(widget.item.endTime)),
+                        if (widget.item.isEmdRequired && widget.item.emdAmount > 0)
+                          _infoRow('Joining Fee', formatCurrency(widget.item.emdAmount), isBadge: true, badgeColor: const Color(0xFF059669)),
                         _infoRow('Includes', _getLotsSummary()),
                       ],
                     ),
@@ -1301,7 +1314,7 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
     );
   }
 
-  Widget _infoRow(String label, String value) {
+  Widget _infoRow(String label, String value, {bool isBadge = false, Color? badgeColor}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4.0),
       child: Row(
@@ -1317,16 +1330,36 @@ class _GroupAuctionCardState extends State<GroupAuctionCard> {
             ),
           ),
           const SizedBox(width: 4),
-          Expanded(
-            flex: 3,
-            child: Text(
-              value,
-              style: const TextStyle(
-                  fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
-              textAlign: TextAlign.right,
-              overflow: TextOverflow.ellipsis,
+          if (isBadge)
+            Flexible(
+              flex: 3,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: badgeColor ?? const Color(0xFF059669),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              flex: 3,
+              child: Text(
+                value,
+                style: const TextStyle(
+                    fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1752,6 +1785,12 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
     // Timer string & display text
     final timerString = _formatLotCountdown(lotStart, lotEnd, lotStatus, now);
 
+    final lotRegFee = lot['registration_fee'] as Map<String, dynamic>?;
+    final bool lotFeeRequired = lotRegFee?['required'] == true || isEmdRequired;
+    final double lotFeeAmount = (lotRegFee?['required'] == true && double.tryParse(lotRegFee?['amount']?.toString() ?? '') != null)
+        ? (double.tryParse(lotRegFee!['amount'].toString()) ?? 0.0)
+        : emdAmount;
+
     // Image url for this specific lot
     final displayImg = lotImgs.isNotEmpty
         ? lotImgs.first
@@ -1923,6 +1962,39 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                 ],
                 const SizedBox(height: 10),
 
+                // Joining Fee Badge (if configured)
+                if (lotFeeRequired && lotFeeAmount > 0) ...[
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Row(
+                          children: [
+                            Icon(Icons.payments_outlined, size: 14, color: Color(0xFF059669)),
+                            SizedBox(width: 5),
+                            Text(
+                              'Joining / Reg. Fee',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF065F46)),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          formatCurrency(lotFeeAmount),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF047857)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 // Pricing & Quantity Box
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1945,7 +2017,7 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // Action Button
+                // Action Buttons (View Details + Bid / Interest / Request)
                 SizedBox(
                   width: double.infinity,
                   child: lotIsEnded
@@ -1963,69 +2035,138 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                           ),
                         )
                       : canBid
-                          ? ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (context) => LiveAuctionPage(
-                                      roomId: lotRoomId,
-                                      roomTitle: '$lotTitle (${widget.groupTitle})',
+                          ? Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () {
+                                      AuctionDetailDialog.show(context, lotRoomId);
+                                    },
+                                    icon: const Icon(Icons.info_outline_rounded, size: 13),
+                                    label: const Text('View Details', overflow: TextOverflow.ellipsis),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: const Color(0xFF0288D1),
+                                      side: const BorderSide(color: Color(0xFF0288D1)),
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                      textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                     ),
                                   ),
-                                );
-                              },
-                              icon: const Icon(Icons.gavel_rounded, size: 14),
-                              label: const Text('Bid Now'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFFDC2626),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => LiveAuctionPage(
+                                            roomId: lotRoomId,
+                                            roomTitle: '$lotTitle (${widget.groupTitle})',
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(Icons.gavel_rounded, size: 14),
+                                    label: const Text('Bid Now', overflow: TextOverflow.ellipsis),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFFDC2626),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             )
                           : isLocked
-                              ? ElevatedButton.icon(
-                                  onPressed: () {
-                                    EnquiryDialog.show(
-                                      context,
-                                      '$lotTitle (${widget.groupTitle})',
-                                      auctionId: lotRoomId,
-                                      isEmdRequired: isEmdRequired,
-                                      emdAmount: emdAmount,
-                                    );
-                                  },
-                                  icon: const Icon(Icons.lock_outline, size: 13),
-                                  label: const Text('Request Access'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFFEA580C),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
+                              ? Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () {
+                                          AuctionDetailDialog.show(context, lotRoomId);
+                                        },
+                                        icon: const Icon(Icons.info_outline_rounded, size: 13),
+                                        label: const Text('View Details', overflow: TextOverflow.ellipsis),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF0288D1),
+                                          side: const BorderSide(color: Color(0xFFBAE6FD)),
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          EnquiryDialog.show(
+                                            context,
+                                            '$lotTitle (${widget.groupTitle})',
+                                            auctionId: lotRoomId,
+                                            isEmdRequired: lotFeeRequired,
+                                            emdAmount: lotFeeAmount,
+                                          );
+                                        },
+                                        icon: const Icon(Icons.lock_outline, size: 13),
+                                        label: const Text('Request Access', overflow: TextOverflow.ellipsis),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFFEA580C),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 )
-                              : ElevatedButton.icon(
-                                  onPressed: () {
-                                    EnquiryDialog.show(
-                                      context,
-                                      '$lotTitle (${widget.groupTitle})',
-                                      auctionId: lotRoomId,
-                                      isEmdRequired: isEmdRequired,
-                                      emdAmount: emdAmount,
-                                    );
-                                  },
-                                  icon: const Icon(Icons.touch_app_rounded, size: 14),
-                                  label: const Text('Show Interest'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF059669),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(vertical: 8),
-                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        onPressed: () {
+                                          AuctionDetailDialog.show(context, lotRoomId);
+                                        },
+                                        icon: const Icon(Icons.info_outline_rounded, size: 13),
+                                        label: const Text('View Details', overflow: TextOverflow.ellipsis),
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: const Color(0xFF0288D1),
+                                          side: const BorderSide(color: Color(0xFFBAE6FD)),
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ElevatedButton.icon(
+                                        onPressed: () {
+                                          EnquiryDialog.show(
+                                            context,
+                                            '$lotTitle (${widget.groupTitle})',
+                                            auctionId: lotRoomId,
+                                            isEmdRequired: lotFeeRequired,
+                                            emdAmount: lotFeeAmount,
+                                          );
+                                        },
+                                        icon: const Icon(Icons.touch_app_rounded, size: 14),
+                                        label: const Text('Show Interest', overflow: TextOverflow.ellipsis),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: const Color(0xFF059669),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                 ),
               ],
