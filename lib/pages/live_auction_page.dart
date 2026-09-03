@@ -1188,10 +1188,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                               overflow: TextOverflow.ellipsis,
                             ),
                             if (winner != null && winner.isNotEmpty)
-                              Text(
-                                'Winner: $winner',
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.bold),
-                              ),
+                              const SizedBox.shrink(),
                           ],
                         ),
                       ),
