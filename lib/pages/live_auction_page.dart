@@ -42,7 +42,7 @@ class LiveAuctionPage extends StatefulWidget {
   State<LiveAuctionPage> createState() => _LiveAuctionPageState();
 }
 
-class _LiveAuctionPageState extends State<LiveAuctionPage> {
+class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingObserver {
   bool _isAuthenticated = false;
   bool _isLoading = true;
   String? _errorMessage;
@@ -61,6 +61,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   final Map<String, WebSocketChannel> _roomChannels = {};
 
   Timer? _countdownTimer;
+  final Stopwatch _monotonicClock = Stopwatch();
   bool _isSpectator = false;
   String? _userRole;
 
@@ -104,6 +105,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _monotonicClock.start();
     _initPage();
   }
 
@@ -115,6 +118,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _countdownTimer?.cancel();
     for (var ch in _roomChannels.values) {
       try {
@@ -129,6 +133,28 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     _tempEmailController.dispose();
     _tempPasswordController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _isAuthenticated) {
+      // A Dart periodic timer may be paused while the app is backgrounded.
+      // Refresh from the server before the bidder can act on an old display.
+      _refreshCategories();
+    }
+  }
+
+  void _syncCountdown(Map<String, dynamic> state, int seconds) {
+    state['timeRemainingSec'] = seconds < 0 ? 0 : seconds;
+    state['timerSyncedAtMs'] = _monotonicClock.elapsedMilliseconds;
+  }
+
+  int _remainingSeconds(Map<String, dynamic> state) {
+    final int syncedSeconds = _parseInt(state['timeRemainingSec'], 0);
+    final int syncedAtMs = _parseInt(state['timerSyncedAtMs'], _monotonicClock.elapsedMilliseconds);
+    final int elapsedSeconds = (((_monotonicClock.elapsedMilliseconds - syncedAtMs) ~/ 1000)
+        .clamp(0, syncedSeconds) as int);
+    return syncedSeconds - elapsedSeconds;
   }
 
   Future<void> _fetchGroupCategoriesAndInit({String? sessionToken, bool showLoading = false}) async {
@@ -190,7 +216,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           if (_roomStates.containsKey(rId)) {
             final existing = _roomStates[rId]!;
             existing['status'] = status;
-            existing['timeRemainingSec'] = timeRem;
+            _syncCountdown(existing, timeRem);
             existing['auctionEnded'] = isEnded;
             existing['currentBid'] = currentBid;
             existing['minBid'] = minBid;
@@ -210,6 +236,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
               'minBid': minBid,
               'minRaise': minRaise,
               'timeRemainingSec': timeRem,
+              'timerSyncedAtMs': _monotonicClock.elapsedMilliseconds,
               'isHighestBidder': false,
               'isFirstBid': (cat['bids_count'] ?? 0) == 0,
               'status': status,
@@ -235,29 +262,23 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     }
   }
 
-  /// Global local countdown timer that updates seconds display every second without making any network calls.
-  /// All real-time bid updates, countdown corrections, and lot conclusions are driven by WebSockets.
+  /// Rebuilds the countdown display. Remaining time is calculated from the
+  /// monotonic elapsed-time anchor, not from the number of timer callbacks.
   void _startGlobalCountdownTimer() {
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() {
         for (var state in _roomStates.values) {
-          int rem = (state['timeRemainingSec'] as int?) ?? 0;
+          final int rem = _remainingSeconds(state);
           bool ended = state['auctionEnded'] == true;
           String status = state['status']?.toString() ?? '';
-          // Only decrement locally if the room is live AND not already ended by server.
-          // countdown_tick WebSocket messages will correct any drift every second.
-          if (!ended && status == 'live' && rem > 0) {
-            final newRem = rem - 1;
-            state['timeRemainingSec'] = newRem;
-            if (newRem <= 0) {
-              // Local timer reached zero — mark ended optimistically.
-              // If the server disagrees it will re-sync on next countdown_tick.
-              state['auctionEnded'] = true;
-              state['status'] = 'ended';
-              state['timeRemainingSec'] = 0;
-            }
+          // The remaining value is derived from monotonic elapsed time, so it
+          // catches up after a delayed frame instead of losing paused seconds.
+          if (!ended && status == 'live' && rem <= 0) {
+            state['auctionEnded'] = true;
+            state['status'] = 'ended';
+            _syncCountdown(state, 0);
           }
         }
       });
@@ -441,7 +462,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         if (data['current_bid'] != null) state['currentBid'] = _parseDouble(data['current_bid'], state['currentBid']);
         if (data['min_bid'] != null) state['minBid'] = _parseDouble(data['min_bid'], state['minBid']);
         if (data['min_raise'] != null) state['minRaise'] = _parseDouble(data['min_raise'], state['minRaise']);
-        if (data['time_remaining_sec'] != null) state['timeRemainingSec'] = _parseInt(data['time_remaining_sec'], state['timeRemainingSec']);
+        if (data['time_remaining_sec'] != null) {
+          _syncCountdown(state, _parseInt(data['time_remaining_sec'], state['timeRemainingSec']));
+        }
         state['isHighestBidder'] = data['is_highest_bidder'] == true;
         state['isFirstBid'] = data['is_first_bid'] == true;
 
@@ -467,13 +490,29 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         // Never trust local decrement alone — server is ground truth.
         final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
         if (state['auctionEnded'] != true) {
-          state['timeRemainingSec'] = secs;
+          _syncCountdown(state, secs);
           if (secs <= 0) {
             state['auctionEnded'] = true;
             state['status'] = 'ended';
-            state['timeRemainingSec'] = 0;
+            _syncCountdown(state, 0);
           }
         }
+      } else if (type == 'room_updated') {
+        // Every mutable live-auction field is pushed by the admin update path.
+        final room = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
+        final item = room['item'] is Map ? Map<String, dynamic>.from(room['item'] as Map) : <String, dynamic>{};
+        state['title'] = room['title']?.toString() ?? state['title'];
+        state['category'] = room['category']?.toString() ?? state['category'];
+        state['subcategory'] = room['subcategory']?.toString() ?? state['subcategory'];
+        state['item'] = item;
+        state['status'] = room['status']?.toString() ?? state['status'];
+        state['scheduledStart'] = room['scheduled_start']?.toString() ?? state['scheduledStart'];
+        state['scheduledEnd'] = room['scheduled_end']?.toString() ?? state['scheduledEnd'];
+        state['minBid'] = _parseDouble(item['min_bid'], state['minBid']);
+        state['minRaise'] = _parseDouble(item['min_raise'], state['minRaise']);
+        _syncCountdown(state, _parseInt(data['seconds_remaining'], state['timeRemainingSec']));
+        final ended = state['status'] == 'ended' || _remainingSeconds(state) <= 0;
+        state['auctionEnded'] = ended;
       } else if (type == 'auction_ended') {
         // Server confirmed auction is over — freeze immediately regardless of local timer.
         // Do NOT zero timeRemainingSec — timer display shows ENDED text via the 'ended' flag.
@@ -1269,12 +1308,14 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
     final String catName = (state['category'] ?? state['subcategory'] ?? 'Lot').toString().toUpperCase();
     final dynamic rawQty = item['quantity'];
     final String unit = item['unit']?.toString() ?? '';
-    final String? thumbUrl = item['thumbnail_url']?.toString();
+    final images = item['images'];
+    final String? thumbUrl = item['thumbnail_url']?.toString() ??
+        (images is List && images.isNotEmpty ? images.first?.toString() : null);
 
     final double currentBid = _parseDouble(state['currentBid'], 0.0);
     final double minBid = _parseDouble(state['minBid'], 0.0);
     final double minRaise = _parseDouble(state['minRaise'], 100.0);
-    final int timeRem = _parseInt(state['timeRemainingSec'], 0);
+    final int timeRem = _remainingSeconds(state);
     final bool isHighest = state['isHighestBidder'] == true;
     final bool isFirst = state['isFirstBid'] == true;
     final bool ended = state['auctionEnded'] == true;
