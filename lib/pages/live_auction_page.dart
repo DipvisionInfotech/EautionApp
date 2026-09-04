@@ -68,6 +68,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
   final TextEditingController _tempEmailController = TextEditingController();
   final TextEditingController _tempPasswordController = TextEditingController();
 
+  void _log(String message) {
+    final time = DateTime.now().toIso8601String().substring(11, 19);
+    debugPrint('[LIVE_BID $time] $message');
+    print('[LIVE_BID $time] $message');
+  }
+
   String _extractErrorMessage(dynamic error, {String fallback = 'These bidding credentials are not authorized for this auction room.'}) {
     if (error == null) return fallback;
     if (error is String) {
@@ -400,19 +406,20 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           .replaceFirst('/api', '');
 
       final wsUrl = '$baseWs/ws/room/$roomId/';
+      _log('CONNECTING Primary WS -> $wsUrl [subprotocols: $token, token.$token]');
+
       bool hasReceivedData = false;
       bool fallbackStarted = false;
 
       void startFallback() {
         if (fallbackStarted) return;
         fallbackStarted = true;
+        _log('Triggering Fallback WS for room $roomId (query token)');
         _connectSingleRoomWebSocketFallback(roomId, token);
       }
 
       final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
-        // Prioritize the bare token that production Daphne and consumers negotiate cleanly,
-        // while preserving the token.<credential> format as a secondary fallback.
         protocols: [token, 'token.$token'],
       );
 
@@ -422,22 +429,32 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       channel.stream.listen(
         (message) {
           hasReceivedData = true;
+          _log('WS RECEIVED [$roomId]: $message');
           final data = jsonDecode(message);
           _handleRoomWebSocketMessage(roomId, data);
         },
         onError: (error) {
-          debugPrint("WS error in room $roomId: $error");
+          _log('WS ERROR [$roomId]: $error');
           if (!hasReceivedData) {
             startFallback();
           }
         },
         onDone: () {
-          debugPrint("WS closed in room $roomId");
+          final code = channel.closeCode;
+          final reason = channel.closeReason;
+          _log('WS CLOSED [$roomId]: closeCode=$code, closeReason=$reason');
+          if (code == 4403) {
+            _log('  -> Hint: Server rejected with 4403 (Room not live, or bidder not approved for this lot)');
+          } else if (code == 4401) {
+            _log('  -> Hint: Server rejected with 4401 (Session token invalid or expired)');
+          } else if (code == 4429) {
+            _log('  -> Hint: Server rejected with 4429 (Too many simultaneous WS connections)');
+          }
           if (!hasReceivedData) startFallback();
         },
       );
     } catch (e) {
-      debugPrint("Failed to connect WS in room $roomId: $e");
+      _log('WS EXCEPTION [$roomId]: $e');
       _connectSingleRoomWebSocketFallback(roomId, token);
     }
   }
@@ -448,6 +465,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         .replaceFirst('/api', '');
 
     final wsUrl = '$baseWs/ws/room/$roomId/?token=$token';
+    _log('CONNECTING Fallback WS -> $wsUrl');
+
     final channel = WebSocketChannel.connect(Uri.parse(wsUrl));
 
     _roomChannels[roomId]?.sink.close();
@@ -455,10 +474,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
     channel.stream.listen(
       (message) {
+        _log('FALLBACK WS RECEIVED [$roomId]: $message');
         final data = jsonDecode(message);
         _handleRoomWebSocketMessage(roomId, data);
       },
-      onError: (e) => debugPrint("Legacy WS error in room $roomId: $e"),
+      onError: (e) => _log('FALLBACK WS ERROR [$roomId]: $e'),
+      onDone: () {
+        final code = channel.closeCode;
+        final reason = channel.closeReason;
+        _log('FALLBACK WS CLOSED [$roomId]: closeCode=$code, closeReason=$reason');
+      },
     );
   }
 
@@ -614,6 +639,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       _loginErrorMessage = null;
     });
 
+    _log('EPHEMERAL LOGIN REQUEST: email=$email, roomId=${widget.roomId}');
     final result = await ApiService.ephemeralLogin(email, password, roomId: widget.roomId);
 
     if (!mounted) return;
@@ -626,6 +652,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       if (approvedList != null && approvedList.isNotEmpty) {
         _approvedRoomIds = approvedList.map((e) => e.toString()).toSet();
       }
+      _log('EPHEMERAL LOGIN SUCCESS: token=$sessionToken, approvedLots=$_approvedRoomIds');
 
       // Re-fetch categories passing the authenticated sessionToken
       // Backend GroupCategoriesView will now strictly return only approved lots for this bidder
@@ -812,17 +839,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     }
 
     final channel = _roomChannels[roomId];
+    _log('PLACE BID: room=$roomId, amount=$amount, currentBid=$currentBid, hasChannel=${channel != null}');
     if (channel != null) {
       ScaffoldMessenger.of(context).clearSnackBars();
-      channel.sink.add(jsonEncode({
+      final payload = jsonEncode({
         "type": "place_bid",
         "amount": amount,
-      }));
+      });
+      _log('SENDING BID PAYLOAD [$roomId]: $payload');
+      channel.sink.add(payload);
       controller.clear();
     } else {
+      _log('CANNOT BID: Channel is null or disconnected for room $roomId. Reconnecting...');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Not connected to this lot room. Reconnecting...')),
       );
+      if (_sessionToken != null) {
+        _connectSingleRoomWebSocket(roomId, _sessionToken!);
+      }
     }
   }
 
