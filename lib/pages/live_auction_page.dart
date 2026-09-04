@@ -246,12 +246,17 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
           int rem = (state['timeRemainingSec'] as int?) ?? 0;
           bool ended = state['auctionEnded'] == true;
           String status = state['status']?.toString() ?? '';
-          if (status == 'live' && rem > 0 && !ended) {
+          // Only decrement locally if the room is live AND not already ended by server.
+          // countdown_tick WebSocket messages will correct any drift every second.
+          if (!ended && status == 'live' && rem > 0) {
             final newRem = rem - 1;
             state['timeRemainingSec'] = newRem;
-            if (newRem == 0) {
+            if (newRem <= 0) {
+              // Local timer reached zero — mark ended optimistically.
+              // If the server disagrees it will re-sync on next countdown_tick.
               state['auctionEnded'] = true;
               state['status'] = 'ended';
+              state['timeRemainingSec'] = 0;
             }
           }
         }
@@ -458,21 +463,28 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         state['isHighestBidder'] = (data['is_highest_bidder'] == true) ||
             (state['myAlias'] != null && newAlias == state['myAlias']);
       } else if (type == 'countdown_tick') {
+        // Always sync from the server's authoritative seconds_remaining value.
+        // Never trust local decrement alone — server is ground truth.
+        final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
         if (state['auctionEnded'] != true) {
-          final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
           state['timeRemainingSec'] = secs;
-          if (secs == 0) {
+          if (secs <= 0) {
             state['auctionEnded'] = true;
+            state['status'] = 'ended';
+            state['timeRemainingSec'] = 0;
           }
         }
       } else if (type == 'auction_ended') {
+        // Server confirmed auction is over — freeze immediately regardless of local timer.
         state['auctionEnded'] = true;
+        state['status'] = 'ended';
+        state['timeRemainingSec'] = 0;
         state['winnerAlias'] = data['winner_alias']?.toString();
         state['winningBid'] = _parseDouble(data['winning_bid'], 0.0);
       } else if (type == 'error' || type == 'bid_rejected') {
         String errorMsg = data['message']?.toString() ?? '';
+        final reason = data['reason']?.toString();
         if (errorMsg.isEmpty) {
-          final reason = data['reason']?.toString();
           if (reason == 'self_outbid_restricted') {
             errorMsg = 'You are already the highest bidder on this lot.';
           } else if (reason == 'first_bid_cap_exceeded') {
@@ -486,10 +498,20 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                 ? 'Bid must be at least ₹${_formatCurrency(_parseDouble(minNext))}.'
                 : 'Bid is below minimum required raise.';
           } else if (reason == 'auction_ended') {
-            errorMsg = 'Auction has ended.';
+            errorMsg = 'This lot has concluded. No more bids accepted.';
           } else {
             errorMsg = 'Bid could not be accepted.';
           }
+        }
+        // CRITICAL: if server rejected because auction ended, immediately freeze this room's state
+        // so the UI stops showing the Bid Now button regardless of the local countdown.
+        if (reason == 'auction_ended' ||
+            errorMsg.toLowerCase().contains('already ended') ||
+            errorMsg.toLowerCase().contains('auction has ended') ||
+            errorMsg.toLowerCase().contains('concluded')) {
+          state['auctionEnded'] = true;
+          state['status'] = 'ended';
+          state['timeRemainingSec'] = 0;
         }
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
