@@ -476,9 +476,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
         }
       } else if (type == 'auction_ended') {
         // Server confirmed auction is over — freeze immediately regardless of local timer.
+        // Do NOT zero timeRemainingSec — timer display shows ENDED text via the 'ended' flag.
         state['auctionEnded'] = true;
         state['status'] = 'ended';
-        state['timeRemainingSec'] = 0;
         state['winnerAlias'] = data['winner_alias']?.toString();
         state['winningBid'] = _parseDouble(data['winning_bid'], 0.0);
       } else if (type == 'error' || type == 'bid_rejected') {
@@ -503,15 +503,15 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
             errorMsg = 'Bid could not be accepted.';
           }
         }
-        // CRITICAL: if server rejected because auction ended, immediately freeze this room's state
-        // so the UI stops showing the Bid Now button regardless of the local countdown.
+        // CRITICAL: if server rejected because auction ended, immediately mark this room as ended
+        // so the Bid Now button is disabled. Timer display will show ENDED via the 'ended' flag.
+        // Do NOT zero timeRemainingSec — no jarring number jump for the bidder.
         if (reason == 'auction_ended' ||
             errorMsg.toLowerCase().contains('already ended') ||
             errorMsg.toLowerCase().contains('auction has ended') ||
             errorMsg.toLowerCase().contains('concluded')) {
           state['auctionEnded'] = true;
           state['status'] = 'ended';
-          state['timeRemainingSec'] = 0;
         }
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1375,7 +1375,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        _formatTimerDisplay(timeRem),
+                        ended ? 'ENDED' : _formatTimerDisplay(timeRem),
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -1603,19 +1603,19 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> {
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: isHighest ? null : () => _placeBidForRoom(roomId),
+                    onPressed: (isHighest || ended) ? null : () => _placeBidForRoom(roomId),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0288D1),
+                      backgroundColor: ended ? const Color(0xFFE2E8F0) : const Color(0xFF0288D1),
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                     ),
                     child: Text(
-                      isHighest ? 'Leading' : 'Bid Now',
+                      ended ? 'Ended' : (isHighest ? 'Leading' : 'Bid Now'),
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
-                        color: isHighest ? const Color(0xFF64748B) : Colors.white,
+                        color: (ended || isHighest) ? const Color(0xFF64748B) : Colors.white,
                       ),
                     ),
                   ),
