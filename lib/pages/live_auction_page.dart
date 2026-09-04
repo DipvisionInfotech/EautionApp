@@ -273,9 +273,11 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           final int rem = _remainingSeconds(state);
           bool ended = state['auctionEnded'] == true;
           String status = state['status']?.toString() ?? '';
+          final int syncedSec = _parseInt(state['timeRemainingSec'], 0);
           // The remaining value is derived from monotonic elapsed time, so it
           // catches up after a delayed frame instead of losing paused seconds.
-          if (!ended && status == 'live' && rem <= 0) {
+          // Only mark ended optimistically if it was counting down from an active positive timer.
+          if (!ended && status == 'live' && syncedSec > 0 && rem <= 0) {
             state['auctionEnded'] = true;
             state['status'] = 'ended';
             _syncCountdown(state, 0);
@@ -409,9 +411,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
       final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
-        // Matches the backend's token.<credential> subprotocol parser and
-        // keeps the credential out of the WebSocket URL.
-        protocols: ['token.$token'],
+        // Prioritize the bare token that production Daphne and consumers negotiate cleanly,
+        // while preserving the token.<credential> format as a secondary fallback.
+        protocols: [token, 'token.$token'],
       );
 
       _roomChannels[roomId]?.sink.close();
