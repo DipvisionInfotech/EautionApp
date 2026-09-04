@@ -353,7 +353,6 @@ class ApiService {
     try {
       final List<String> qParams = [];
       if (status != null && status.isNotEmpty) qParams.add('status=$status');
-      if (sessionToken != null && sessionToken.isNotEmpty) qParams.add('session_token=$sessionToken');
       final queryParam = qParams.isNotEmpty ? '?${qParams.join('&')}' : '';
 
       final response = await http.get(
@@ -722,5 +721,4 @@ class ApiService {
     }
   }
 }
-
 

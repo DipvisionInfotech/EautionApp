@@ -399,10 +399,19 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
       final wsUrl = '$baseWs/ws/room/$roomId/';
       bool hasReceivedData = false;
+      bool fallbackStarted = false;
+
+      void startFallback() {
+        if (fallbackStarted) return;
+        fallbackStarted = true;
+        _connectSingleRoomWebSocketFallback(roomId, token);
+      }
 
       final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
-        protocols: [token],
+        // Matches the backend's token.<credential> subprotocol parser and
+        // keeps the credential out of the WebSocket URL.
+        protocols: ['token.$token'],
       );
 
       _roomChannels[roomId]?.sink.close();
@@ -417,11 +426,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         onError: (error) {
           debugPrint("WS error in room $roomId: $error");
           if (!hasReceivedData) {
-            _connectSingleRoomWebSocketFallback(roomId, token);
+            startFallback();
           }
         },
         onDone: () {
           debugPrint("WS closed in room $roomId");
+          if (!hasReceivedData) startFallback();
         },
       );
     } catch (e) {
