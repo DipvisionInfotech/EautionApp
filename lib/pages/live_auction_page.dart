@@ -800,8 +800,10 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             errorMsg.toLowerCase().contains('already ended') ||
             errorMsg.toLowerCase().contains('auction has ended') ||
             errorMsg.toLowerCase().contains('concluded')) {
-          state['auctionEnded'] = true;
-          state['status'] = 'ended';
+          if (state != null) {
+            state['auctionEnded'] = true;
+            state['status'] = 'ended';
+          }
         }
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
