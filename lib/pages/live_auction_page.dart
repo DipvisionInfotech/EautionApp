@@ -182,12 +182,21 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
         var parsedList = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
 
-        // For non-spectator bidders, strictly filter to approved lots if known
-        if (!_isSpectator && _approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
-          parsedList = parsedList.where((cat) {
+        // For non-spectator bidders, synchronize approved room IDs
+        if (!_isSpectator) {
+          for (var cat in parsedList) {
             final rId = cat['id']?.toString() ?? '';
-            return _approvedRoomIds!.contains(rId);
-          }).toList();
+            if (cat['is_approved'] == true && rId.isNotEmpty) {
+              _approvedRoomIds ??= <String>{};
+              _approvedRoomIds!.add(rId);
+            }
+          }
+          if (_approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
+            parsedList = parsedList.where((cat) {
+              final rId = cat['id']?.toString() ?? '';
+              return _approvedRoomIds!.contains(rId) || cat['is_approved'] == true;
+            }).toList();
+          }
         }
 
         _categories = parsedList;
@@ -221,12 +230,22 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
           if (_roomStates.containsKey(rId)) {
             final existing = _roomStates[rId]!;
+            existing['title'] = cat['title']?.toString() ?? existing['title'];
+            existing['category'] = cat['category']?.toString() ?? existing['category'];
+            existing['subcategory'] = cat['subcategory']?.toString() ?? existing['subcategory'];
+            existing['item'] = itemMap;
             existing['status'] = status;
             _syncCountdown(existing, timeRem);
             existing['auctionEnded'] = isEnded;
-            existing['currentBid'] = currentBid;
             existing['minBid'] = minBid;
             existing['minRaise'] = minRaise;
+            if (existing['isFirstBid'] == true) {
+              existing['currentBid'] = minBid;
+            } else {
+              existing['currentBid'] = currentBid;
+            }
+            existing['scheduledStart'] = cat['scheduled_start']?.toString() ?? existing['scheduledStart'];
+            existing['scheduledEnd'] = cat['scheduled_end']?.toString() ?? existing['scheduledEnd'];
             if (winnerMap != null) {
               existing['winningBid'] = _parseDouble(winnerMap['bid_amount'], 0.0);
               existing['winnerAlias'] = cat['winner']?['user_id']?.toString();
@@ -498,21 +517,126 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     );
   }
 
+  /// Applies real-time group-level categories update received directly over WebSocket
+  void _applyUpdatedCategories(List<dynamic> rawList, {String? newGroupTitle}) {
+    if (!mounted) return;
+    if (newGroupTitle != null && newGroupTitle.isNotEmpty) {
+      _groupTitle = newGroupTitle;
+    }
+    final parsedList = rawList.map((c) => Map<String, dynamic>.from(c as Map)).toList();
+
+    parsedList.sort((a, b) {
+      final aCreated = a['created_at']?.toString() ?? '';
+      final bCreated = b['created_at']?.toString() ?? '';
+      if (aCreated.isNotEmpty && bCreated.isNotEmpty) {
+        return aCreated.compareTo(bCreated);
+      }
+      final aId = a['id']?.toString() ?? '';
+      final bId = b['id']?.toString() ?? '';
+      return aId.compareTo(bId);
+    });
+
+    setState(() {
+      _categories = parsedList;
+
+      for (var cat in _categories) {
+        final rId = cat['id']?.toString() ?? '';
+        if (rId.isEmpty) continue;
+
+        _approvedRoomIds ??= <String>{};
+        _approvedRoomIds!.add(rId);
+
+        final itemMap = (cat['item'] is Map) ? Map<String, dynamic>.from(cat['item'] as Map) : <String, dynamic>{};
+        final minBid = _parseDouble(itemMap['min_bid'] ?? cat['min_bid'], 0.0);
+        final minRaise = _parseDouble(itemMap['min_raise'] ?? cat['min_raise'], 100.0);
+        final currentBid = _parseDouble(cat['current_bid'], minBid);
+        final timeRem = _parseInt(cat['time_remaining_sec'], 0);
+        final winnerMap = (cat['winner'] is Map) ? (cat['winner'] as Map) : null;
+        final status = cat['status']?.toString() ?? 'upcoming';
+        final isEnded = status == 'ended' || (status == 'live' && timeRem == 0);
+
+        if (_roomStates.containsKey(rId)) {
+          final existing = _roomStates[rId]!;
+          existing['title'] = cat['title']?.toString() ?? existing['title'];
+          existing['category'] = cat['category']?.toString() ?? existing['category'];
+          existing['subcategory'] = cat['subcategory']?.toString() ?? existing['subcategory'];
+          existing['item'] = itemMap;
+          existing['status'] = status;
+          existing['scheduledStart'] = cat['scheduled_start']?.toString() ?? existing['scheduledStart'];
+          existing['scheduledEnd'] = cat['scheduled_end']?.toString() ?? existing['scheduledEnd'];
+          existing['minBid'] = minBid;
+          existing['minRaise'] = minRaise;
+          if (existing['isFirstBid'] == true) {
+            existing['currentBid'] = minBid;
+          } else {
+            existing['currentBid'] = _parseDouble(cat['current_bid'], existing['currentBid']);
+          }
+          _syncCountdown(existing, timeRem);
+          existing['auctionEnded'] = isEnded;
+          if (winnerMap != null) {
+            existing['winningBid'] = _parseDouble(winnerMap['bid_amount'], 0.0);
+            existing['winnerAlias'] = cat['winner']?['user_id']?.toString();
+          }
+        } else {
+          _roomStates[rId] = {
+            'roomId': rId,
+            'title': cat['title']?.toString() ?? '',
+            'category': cat['category']?.toString() ?? '',
+            'subcategory': cat['subcategory']?.toString() ?? '',
+            'item': itemMap,
+            'currentBid': currentBid,
+            'minBid': minBid,
+            'minRaise': minRaise,
+            'timeRemainingSec': timeRem,
+            'timerSyncedAtMs': _monotonicClock.elapsedMilliseconds,
+            'isHighestBidder': false,
+            'isFirstBid': (cat['bids_count'] ?? 0) == 0,
+            'status': status,
+            'scheduledStart': cat['scheduled_start']?.toString(),
+            'scheduledEnd': cat['scheduled_end']?.toString(),
+            'auctionEnded': isEnded,
+            'winnerAlias': cat['winner']?['user_id']?.toString(),
+            'winningBid': winnerMap != null ? _parseDouble(winnerMap['bid_amount'], 0.0) : null,
+            'myAlias': null,
+            'bidController': TextEditingController(),
+            'isSpectator': false,
+            'isApproved': true,
+          };
+        }
+
+        // Auto-connect WebSocket for any newly added or newly live lot immediately!
+        if (status == 'live' && !isEnded && _sessionToken != null && !_roomChannels.containsKey(rId)) {
+          _log('Auto-connecting WebSocket for live lot $rId...');
+          _connectSingleRoomWebSocket(rId, _sessionToken!);
+        }
+      }
+    });
+  }
+
   void _handleRoomWebSocketMessage(String roomId, Map<String, dynamic> data) {
     if (!mounted) return;
 
     final type = data['type'];
     if (type == 'group_updated') {
-      _log('GROUP UPDATED broadcast received for group=${data['group_id']}. Reloading categories and lots...');
-      _refreshCategories();
+      _log('GROUP UPDATED broadcast received for group=${data['group_id']}.');
+      final rawCats = data['categories'];
+      if (rawCats is List && rawCats.isNotEmpty) {
+        _applyUpdatedCategories(rawCats, newGroupTitle: data['group_title']?.toString());
+      } else {
+        _refreshCategories();
+      }
       return;
     }
 
-    final state = _roomStates[roomId];
-    if (state == null) return;
+    final roomData = (data['room'] is Map) ? Map<String, dynamic>.from(data['room'] as Map) : null;
+    final targetRoomId = (roomData != null && roomData['id'] != null) ? roomData['id'].toString() : roomId;
+    final state = _roomStates[targetRoomId] ?? _roomStates[roomId];
+
+    if (type != 'room_updated' && state == null) return;
 
     setState(() {
       if (type == 'room_state') {
+        if (state == null) return;
         if (data['current_bid'] != null) state['currentBid'] = _parseDouble(data['current_bid'], state['currentBid']);
         if (data['min_bid'] != null) state['minBid'] = _parseDouble(data['min_bid'], state['minBid']);
         if (data['min_raise'] != null) state['minRaise'] = _parseDouble(data['min_raise'], state['minRaise']);
@@ -531,6 +655,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           state['isSpectator'] = true;
         }
       } else if (type == 'new_bid') {
+        if (state == null) return;
         final double newAmt = _parseDouble(data['amount'], 0.0);
         final String newAlias = data['bidder_alias']?.toString() ?? 'Unknown';
 
@@ -540,8 +665,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         state['isHighestBidder'] = (data['is_highest_bidder'] == true) ||
             (state['myAlias'] != null && newAlias == state['myAlias']);
       } else if (type == 'countdown_tick') {
-        // Always sync from the server's authoritative seconds_remaining value.
-        // Never trust local decrement alone — server is ground truth.
+        if (state == null) return;
         final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
         if (state['auctionEnded'] != true) {
           _syncCountdown(state, secs);
@@ -553,41 +677,96 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         }
       } else if (type == 'room_updated') {
         // Every mutable live-auction field is pushed by the admin update path.
-        final room = data['room'] is Map ? Map<String, dynamic>.from(data['room'] as Map) : <String, dynamic>{};
+        final room = roomData ?? <String, dynamic>{};
         final item = room['item'] is Map ? Map<String, dynamic>.from(room['item'] as Map) : <String, dynamic>{};
-        state['title'] = room['title']?.toString() ?? state['title'];
-        state['category'] = room['category']?.toString() ?? state['category'];
-        state['subcategory'] = room['subcategory']?.toString() ?? state['subcategory'];
-        state['item'] = item;
-        state['status'] = room['status']?.toString() ?? state['status'];
-        state['scheduledStart'] = room['scheduled_start']?.toString() ?? state['scheduledStart'];
-        state['scheduledEnd'] = room['scheduled_end']?.toString() ?? state['scheduledEnd'];
-        state['minBid'] = _parseDouble(item['min_bid'], state['minBid']);
-        state['minRaise'] = _parseDouble(item['min_raise'], state['minRaise']);
-        if (state['isFirstBid'] == true) {
-          state['currentBid'] = state['minBid'];
-        }
-        _syncCountdown(state, _parseInt(data['seconds_remaining'], state['timeRemainingSec']));
-        final ended = state['status'] == 'ended' || _remainingSeconds(state) <= 0;
-        state['auctionEnded'] = ended;
 
-        // Also update matching item in _categories so thumbnail / card re-renders title, unit, quantity
-        final catIdx = _categories.indexWhere((c) => c['id']?.toString() == roomId);
-        if (catIdx != -1) {
-          _categories[catIdx]['title'] = state['title'];
-          _categories[catIdx]['category'] = state['category'];
-          _categories[catIdx]['subcategory'] = state['subcategory'];
-          _categories[catIdx]['item'] = item;
-          _categories[catIdx]['status'] = state['status'];
-          _categories[catIdx]['min_bid'] = state['minBid'];
-          _categories[catIdx]['min_raise'] = state['minRaise'];
-          if (state['isFirstBid'] == true) {
-            _categories[catIdx]['current_bid'] = state['currentBid'];
+        var targetState = _roomStates[targetRoomId];
+        if (targetState == null) {
+          targetState = {
+            'roomId': targetRoomId,
+            'title': room['title']?.toString() ?? '',
+            'category': room['category']?.toString() ?? '',
+            'subcategory': room['subcategory']?.toString() ?? '',
+            'item': item,
+            'currentBid': _parseDouble(item['min_bid'], 0.0),
+            'minBid': _parseDouble(item['min_bid'], 0.0),
+            'minRaise': _parseDouble(item['min_raise'], 100.0),
+            'timeRemainingSec': _parseInt(data['seconds_remaining'], 0),
+            'timerSyncedAtMs': _monotonicClock.elapsedMilliseconds,
+            'isHighestBidder': false,
+            'isFirstBid': true,
+            'status': room['status']?.toString() ?? 'live',
+            'scheduledStart': room['scheduled_start']?.toString(),
+            'scheduledEnd': room['scheduled_end']?.toString(),
+            'auctionEnded': false,
+            'bidController': TextEditingController(),
+            'isSpectator': false,
+            'isApproved': true,
+          };
+          _roomStates[targetRoomId] = targetState;
+          _approvedRoomIds ??= <String>{};
+          _approvedRoomIds!.add(targetRoomId);
+        } else {
+          targetState['title'] = room['title']?.toString() ?? targetState['title'];
+          targetState['category'] = room['category']?.toString() ?? targetState['category'];
+          targetState['subcategory'] = room['subcategory']?.toString() ?? targetState['subcategory'];
+          targetState['item'] = item;
+          targetState['status'] = room['status']?.toString() ?? targetState['status'];
+          targetState['scheduledStart'] = room['scheduled_start']?.toString() ?? targetState['scheduledStart'];
+          targetState['scheduledEnd'] = room['scheduled_end']?.toString() ?? targetState['scheduledEnd'];
+          targetState['minBid'] = _parseDouble(item['min_bid'], targetState['minBid']);
+          targetState['minRaise'] = _parseDouble(item['min_raise'], targetState['minRaise']);
+          if (targetState['isFirstBid'] == true) {
+            targetState['currentBid'] = targetState['minBid'];
           }
         }
+
+        if (data['seconds_remaining'] != null) {
+          _syncCountdown(targetState, _parseInt(data['seconds_remaining'], targetState['timeRemainingSec']));
+        }
+        final ended = targetState['status'] == 'ended' || _remainingSeconds(targetState) <= 0;
+        targetState['auctionEnded'] = ended;
+
+        // Also update matching item in _categories so thumbnail / card re-renders title, unit, quantity
+        final catIdx = _categories.indexWhere((c) => c['id']?.toString() == targetRoomId);
+        if (catIdx != -1) {
+          _categories[catIdx]['title'] = targetState['title'];
+          _categories[catIdx]['category'] = targetState['category'];
+          _categories[catIdx]['subcategory'] = targetState['subcategory'];
+          _categories[catIdx]['item'] = item;
+          _categories[catIdx]['status'] = targetState['status'];
+          _categories[catIdx]['min_bid'] = targetState['minBid'];
+          _categories[catIdx]['min_raise'] = targetState['minRaise'];
+          _categories[catIdx]['scheduled_start'] = targetState['scheduledStart'];
+          _categories[catIdx]['scheduled_end'] = targetState['scheduledEnd'];
+          if (targetState['isFirstBid'] == true) {
+            _categories[catIdx]['current_bid'] = targetState['currentBid'];
+          }
+        } else {
+          _categories.add({
+            'id': targetRoomId,
+            'title': targetState['title'],
+            'category': targetState['category'],
+            'subcategory': targetState['subcategory'],
+            'item': item,
+            'status': targetState['status'],
+            'min_bid': targetState['minBid'],
+            'min_raise': targetState['minRaise'],
+            'scheduled_start': targetState['scheduledStart'],
+            'scheduled_end': targetState['scheduledEnd'],
+            'current_bid': targetState['currentBid'],
+            'is_approved': true,
+          });
+        }
+
+        // Auto-connect WebSocket if room became live and channel is missing
+        if (targetState['status'] == 'live' && !ended && _sessionToken != null && !_roomChannels.containsKey(targetRoomId)) {
+          _log('Auto-connecting WebSocket for live room $targetRoomId...');
+          _connectSingleRoomWebSocket(targetRoomId, _sessionToken!);
+        }
       } else if (type == 'auction_ended') {
+        if (state == null) return;
         // Server confirmed auction is over — freeze immediately regardless of local timer.
-        // Do NOT zero timeRemainingSec — timer display shows ENDED text via the 'ended' flag.
         state['auctionEnded'] = true;
         state['status'] = 'ended';
         state['winnerAlias'] = data['winner_alias']?.toString();
@@ -916,12 +1095,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final screenWidth = MediaQuery.of(context).size.width;
     final int crossAxisCount = screenWidth >= 1100 ? 3 : (screenWidth >= 650 ? 2 : 1);
 
-    // Filter categories strictly to approved lots for bidders (spectators/admins see all)
+    // Filter categories strictly to approved lots for bidders (spectators/admins/testers see all)
     final validCategories = _categories.where((cat) {
-      if (_isSpectator) return true;
+      if (_isSpectator || _userRole == 'test_bidder' || _userRole == 'admin') return true;
       final rId = cat['id']?.toString() ?? '';
       if (_approvedRoomIds != null && _approvedRoomIds!.isNotEmpty) {
-        return _approvedRoomIds!.contains(rId);
+        return _approvedRoomIds!.contains(rId) || cat['is_approved'] == true;
       }
       return cat['is_approved'] == true;
     }).toList();
