@@ -38,7 +38,7 @@
   <link rel="manifest" href="manifest.json">
   
   <script>
-    // Unregister any previously installed service workers so old cached builds don't interfere
+    // Unregister any previously installed service workers and clear CacheStorage so old cached builds don't interfere
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for (let registration of registrations) {
@@ -46,9 +46,22 @@
         }
       });
     }
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (let name of names) {
+          caches.delete(name);
+        }
+      });
+    }
   </script>
 </head>
 <body>
-  <script src="flutter_bootstrap.js" async></script>
+  <script>
+    // Load flutter_bootstrap.js with cache-busting timestamp so new builds are detected immediately
+    var bootstrapScript = document.createElement('script');
+    bootstrapScript.src = "flutter_bootstrap.js?v=" + new Date().getTime();
+    bootstrapScript.async = true;
+    document.body.appendChild(bootstrapScript);
+  </script>
 </body>
 </html>
