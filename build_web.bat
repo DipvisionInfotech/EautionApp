@@ -20,12 +20,11 @@ if %ERRORLEVEL% equ 0 (
     echo ==============================================================================
     echo  BUILD SUCCESSFUL!
     echo.
-    echo  Next Step: Upload the contents of 'build/web/' to Hostinger public_html/
+    echo  Next Step: Upload the contents of build/web/ to Hostinger public_html/
     echo.
     echo  Result:
-    echo  - All browsers (Chrome, Safari, Edge, mobile) will automatically load
-    echo    the new build immediately without any manual cache clearing.
-    echo  - .htaccess is already bundled to prevent Hostinger from caching index.html.
+    echo  - All browsers will load the new build immediately with zero cache issues.
+    echo  - .htaccess is bundled to prevent Hostinger from caching index.html.
     echo ==============================================================================
 ) else (
     echo.
