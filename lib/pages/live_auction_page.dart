@@ -420,7 +420,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
       final channel = WebSocketChannel.connect(
         Uri.parse(wsUrl),
-        protocols: [token, 'token.$token'],
+        protocols: [token],
       );
 
       _roomChannels[roomId]?.sink.close();
@@ -443,6 +443,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           final code = channel.closeCode;
           final reason = channel.closeReason;
           _log('WS CLOSED [$roomId]: closeCode=$code, closeReason=$reason');
+          if (identical(_roomChannels[roomId], channel)) {
+            _roomChannels.remove(roomId);
+          }
           if (code == 4403) {
             _log('  -> Hint: Server rejected with 4403 (Room not live, or bidder not approved for this lot)');
           } else if (code == 4401) {
@@ -478,11 +481,19 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         final data = jsonDecode(message);
         _handleRoomWebSocketMessage(roomId, data);
       },
-      onError: (e) => _log('FALLBACK WS ERROR [$roomId]: $e'),
+      onError: (e) {
+        _log('FALLBACK WS ERROR [$roomId]: $e');
+        if (identical(_roomChannels[roomId], channel)) {
+          _roomChannels.remove(roomId);
+        }
+      },
       onDone: () {
         final code = channel.closeCode;
         final reason = channel.closeReason;
         _log('FALLBACK WS CLOSED [$roomId]: closeCode=$code, closeReason=$reason');
+        if (identical(_roomChannels[roomId], channel)) {
+          _roomChannels.remove(roomId);
+        }
       },
     );
   }
@@ -491,6 +502,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     if (!mounted) return;
 
     final type = data['type'];
+    if (type == 'group_updated') {
+      _log('GROUP UPDATED broadcast received for group=${data['group_id']}. Reloading categories and lots...');
+      _refreshCategories();
+      return;
+    }
+
     final state = _roomStates[roomId];
     if (state == null) return;
 
@@ -547,9 +564,27 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         state['scheduledEnd'] = room['scheduled_end']?.toString() ?? state['scheduledEnd'];
         state['minBid'] = _parseDouble(item['min_bid'], state['minBid']);
         state['minRaise'] = _parseDouble(item['min_raise'], state['minRaise']);
+        if (state['isFirstBid'] == true) {
+          state['currentBid'] = state['minBid'];
+        }
         _syncCountdown(state, _parseInt(data['seconds_remaining'], state['timeRemainingSec']));
         final ended = state['status'] == 'ended' || _remainingSeconds(state) <= 0;
         state['auctionEnded'] = ended;
+
+        // Also update matching item in _categories so thumbnail / card re-renders title, unit, quantity
+        final catIdx = _categories.indexWhere((c) => c['id']?.toString() == roomId);
+        if (catIdx != -1) {
+          _categories[catIdx]['title'] = state['title'];
+          _categories[catIdx]['category'] = state['category'];
+          _categories[catIdx]['subcategory'] = state['subcategory'];
+          _categories[catIdx]['item'] = item;
+          _categories[catIdx]['status'] = state['status'];
+          _categories[catIdx]['min_bid'] = state['minBid'];
+          _categories[catIdx]['min_raise'] = state['minRaise'];
+          if (state['isFirstBid'] == true) {
+            _categories[catIdx]['current_bid'] = state['currentBid'];
+          }
+        }
       } else if (type == 'auction_ended') {
         // Server confirmed auction is over — freeze immediately regardless of local timer.
         // Do NOT zero timeRemainingSec — timer display shows ENDED text via the 'ended' flag.
@@ -841,14 +876,26 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final channel = _roomChannels[roomId];
     _log('PLACE BID: room=$roomId, amount=$amount, currentBid=$currentBid, hasChannel=${channel != null}');
     if (channel != null) {
-      ScaffoldMessenger.of(context).clearSnackBars();
-      final payload = jsonEncode({
-        "type": "place_bid",
-        "amount": amount,
-      });
-      _log('SENDING BID PAYLOAD [$roomId]: $payload');
-      channel.sink.add(payload);
-      controller.clear();
+      try {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        final payload = jsonEncode({
+          "type": "place_bid",
+          "amount": amount,
+        });
+        _log('SENDING BID PAYLOAD [$roomId]: $payload');
+        channel.sink.add(payload);
+        controller.clear();
+      } catch (e) {
+        _log('CANNOT BID: Channel error for room $roomId: $e. Reconnecting...');
+        _roomChannels.remove(roomId);
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Connection lost. Reconnecting to lot...')),
+        );
+        if (_sessionToken != null) {
+          _connectSingleRoomWebSocket(roomId, _sessionToken!);
+        }
+      }
     } else {
       _log('CANNOT BID: Channel is null or disconnected for room $roomId. Reconnecting...');
       ScaffoldMessenger.of(context).showSnackBar(
