@@ -679,6 +679,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         if (data['time_remaining_sec'] != null) {
           _syncCountdown(state, _parseInt(data['time_remaining_sec'], state['timeRemainingSec']));
         }
+        if (data['extension_count'] != null) {
+          state['extensionCount'] = _parseInt(data['extension_count'], 0);
+        }
+        if (data['max_extensions'] != null) {
+          state['maxExtensions'] = _parseInt(data['max_extensions'], 10);
+        }
         state['isHighestBidder'] = data['is_highest_bidder'] == true;
         state['isFirstBid'] = data['is_first_bid'] == true;
 
@@ -706,20 +712,42 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           _syncCountdown(state, secs);
         }
 
+        if (data['extension_count'] != null) {
+          state['extensionCount'] = _parseInt(data['extension_count'], state['extensionCount'] ?? 0);
+        }
+        if (data['max_extensions'] != null) {
+          state['maxExtensions'] = _parseInt(data['max_extensions'], state['maxExtensions'] ?? 10);
+        }
+
         if (data['extended'] == true || data['is_extended'] == true) {
-          final extMins = _parseInt(data['extended_by_minutes'] ?? 3, 3);
+          final int extRound = _parseInt(data['extension_count'], state['extensionCount'] ?? 1);
+          final int maxExt = _parseInt(data['max_extensions'], state['maxExtensions'] ?? 10);
+          final bool isFinalRound = data['is_final_round'] == true || extRound >= maxExt;
+          final String lotName = state['title']?.toString() ?? 'Lot';
+
           ScaffoldMessenger.of(context).clearSnackBars();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.more_time_rounded, color: Colors.white, size: 20),
+                  Icon(
+                    isFinalRound ? Icons.warning_amber_rounded : Icons.more_time_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: Text('Auction extended by $extMins minutes due to last-minute bid!')),
+                  Expanded(
+                    child: Text(
+                      isFinalRound
+                          ? 'FINAL ROUND: $lotName extended by 3 minutes (Round $extRound of $maxExt). Auction ends after this round!'
+                          : '$lotName extended by 3 minutes (Overtime $extRound of $maxExt)!',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 ],
               ),
-              backgroundColor: const Color(0xFF0288D1),
-              duration: const Duration(seconds: 4),
+              backgroundColor: isFinalRound ? const Color(0xFFD97706) : const Color(0xFF0288D1),
+              duration: const Duration(seconds: 5),
             ),
           );
         }
@@ -729,22 +757,43 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             final secs = _parseInt(data['seconds_remaining'] ?? data['time_remaining_sec'], state['timeRemainingSec']);
             _syncCountdown(state, secs);
           }
+          if (data['extension_count'] != null) {
+            state['extensionCount'] = _parseInt(data['extension_count'], state['extensionCount'] ?? 0);
+          }
+          if (data['max_extensions'] != null) {
+            state['maxExtensions'] = _parseInt(data['max_extensions'], state['maxExtensions'] ?? 10);
+          }
           state['auctionEnded'] = false;
           state['status'] = 'live';
         }
-        final extMins = _parseInt(data['extended_by_minutes'] ?? 3, 3);
+        final int extRound = _parseInt(data['extension_count'], state?['extensionCount'] ?? 1);
+        final int maxExt = _parseInt(data['max_extensions'], state?['maxExtensions'] ?? 10);
+        final bool isFinalRound = data['is_final_round'] == true || extRound >= maxExt;
+        final String lotName = state?['title']?.toString() ?? 'Lot';
+
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
               children: [
-                const Icon(Icons.more_time_rounded, color: Colors.white, size: 20),
+                Icon(
+                  isFinalRound ? Icons.warning_amber_rounded : Icons.more_time_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
                 const SizedBox(width: 10),
-                Expanded(child: Text('Auction extended by $extMins minutes due to last-minute bid!')),
+                Expanded(
+                  child: Text(
+                    isFinalRound
+                        ? 'FINAL ROUND: $lotName extended by 3 minutes (Round $extRound of $maxExt). Auction ends after this round!'
+                        : '$lotName extended by 3 minutes (Overtime $extRound of $maxExt)!',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ],
             ),
-            backgroundColor: const Color(0xFF0288D1),
-            duration: const Duration(seconds: 4),
+            backgroundColor: isFinalRound ? const Color(0xFFD97706) : const Color(0xFF0288D1),
+            duration: const Duration(seconds: 5),
           ),
         );
       } else if (type == 'countdown_tick') {
@@ -1122,21 +1171,24 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       return;
     }
 
-    // 1st Bid Capping check (10x starting price)
+    // 10x Bid Cap Protection (10x starting price for 1st bid, 10x current highest bid thereafter)
     final double startingPrice = _parseDouble(state['minBid'], 0.0);
     final bool isFirst = state['isFirstBid'] == true;
-    if (isFirst && startingPrice > 0) {
-      final maxFirst = startingPrice * 10;
-      if (amount > maxFirst) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('1st bid cannot exceed ₹${_formatCurrency(maxFirst)} (10x starting price).'),
-            backgroundColor: Colors.red,
+    final double maxAllowed = isFirst ? (startingPrice * 10) : (currentBid * 10);
+    if (maxAllowed > 0 && amount > maxAllowed) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isFirst
+                ? '1st bid cannot exceed ₹${_formatCurrency(maxAllowed)} (10x starting price).'
+                : 'Bid cannot exceed ₹${_formatCurrency(maxAllowed)} (10x current bid ₹${_formatCurrency(currentBid)}).',
           ),
-        );
-        return;
-      }
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      return;
     }
 
     final channel = _roomChannels[roomId];
@@ -1865,6 +1917,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final bool ended = state['auctionEnded'] == true || status == 'ended';
     final bool isLive = status == 'live' && !ended;
     final bool isUpcoming = status == 'upcoming' && !ended;
+    final int extCount = _parseInt(state['extensionCount'], 0);
+    final int maxExt = _parseInt(state['maxExtensions'], 10);
+    final bool isFinalRound = extCount >= maxExt;
     final double? winningBid = state['winningBid'] != null ? _parseDouble(state['winningBid'], 0.0) : null;
     final String? winnerAlias = state['winnerAlias']?.toString();
     final String? scheduledStartStr = state['scheduledStart']?.toString();
@@ -1952,6 +2007,37 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                         ),
                       ),
                     ),
+                    if (extCount > 0 && isLive) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isFinalRound ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(
+                            color: isFinalRound ? const Color(0xFFFCA5A5) : const Color(0xFFFCD34D),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.access_time_filled,
+                              size: 10,
+                              color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              isFinalRound ? 'FINAL ROUND' : 'OT $extCount/$maxExt',
+                              style: TextStyle(
+                                color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
 
