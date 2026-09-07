@@ -47,6 +47,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
   bool _isLoading = true;
   String? _errorMessage;
   String? _loginErrorMessage;
+  int? _selectedLotTab; // 0: All, 1: Live, 2: Upcoming, 3: Ended
 
   String? _groupId;
   String? _groupTitle;
@@ -293,6 +294,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
+      bool needsRefresh = false;
+      final now = DateTime.now();
+
       setState(() {
         for (var state in _roomStates.values) {
           final int rem = _remainingSeconds(state);
@@ -307,13 +311,31 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             state['status'] = 'ended';
             _syncCountdown(state, 0);
           }
+
+          // Automatically transition upcoming lots into live when scheduled start arrives
+          if (!ended && status == 'upcoming') {
+            final startStr = state['scheduledStart']?.toString();
+            if (startStr != null && startStr.isNotEmpty) {
+              final startDt = DateTime.tryParse(startStr);
+              if (startDt != null && (now.isAfter(startDt) || now.isAtSameMomentAs(startDt))) {
+                _log('Upcoming lot ${state['roomId']} scheduled start reached! Auto-transitioning to live.');
+                state['status'] = 'live';
+                state['auctionEnded'] = false;
+                needsRefresh = true;
+              }
+            }
+          }
         }
       });
+
+      if (needsRefresh) {
+        _refreshCategories();
+      }
     });
   }
 
-  /// Check user role: ONLY admin gets spectator auto-connect.
-  /// Bidders authenticate via room credentials. Never logs out an already-authenticated bidder!
+  /// Check user role: Admin gets spectator auto-connect.
+  /// Bidders automatically re-authenticate via persisted room credentials so they stay logged in!
   Future<void> _checkRoleAndAutoConnect() async {
     if (_isAuthenticated) return;
 
@@ -332,6 +354,20 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         }
       }
     } catch (_) {}
+
+    // Check for saved room credentials to automatically log back into the room without re-prompting
+    try {
+      final savedCreds = await ApiService.getSavedRoomCredentials(widget.roomId);
+      if (savedCreds != null && mounted) {
+        _tempEmailController.text = savedCreds['email']!;
+        _tempPasswordController.text = savedCreds['password']!;
+        _log('Auto-authenticating with saved room credentials for ${savedCreds['email']}');
+        await _performEphemeralLogin();
+        if (_isAuthenticated) return;
+      }
+    } catch (e) {
+      _log('Auto-login from saved credentials failed: $e');
+    }
 
     if (mounted) {
       setState(() {
@@ -664,6 +700,53 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         // Strictly evaluate highest bidder for THIS specific room independently
         state['isHighestBidder'] = (data['is_highest_bidder'] == true) ||
             (state['myAlias'] != null && newAlias == state['myAlias']);
+
+        if (data['seconds_remaining'] != null || data['time_remaining_sec'] != null) {
+          final secs = _parseInt(data['seconds_remaining'] ?? data['time_remaining_sec'], state['timeRemainingSec']);
+          _syncCountdown(state, secs);
+        }
+
+        if (data['extended'] == true || data['is_extended'] == true) {
+          final extMins = _parseInt(data['extended_by_minutes'] ?? 3, 3);
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.more_time_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text('Auction extended by $extMins minutes due to last-minute bid!')),
+                ],
+              ),
+              backgroundColor: const Color(0xFF0288D1),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } else if (type == 'auction_extended') {
+        if (state != null) {
+          if (data['seconds_remaining'] != null || data['time_remaining_sec'] != null) {
+            final secs = _parseInt(data['seconds_remaining'] ?? data['time_remaining_sec'], state['timeRemainingSec']);
+            _syncCountdown(state, secs);
+          }
+          state['auctionEnded'] = false;
+          state['status'] = 'live';
+        }
+        final extMins = _parseInt(data['extended_by_minutes'] ?? 3, 3);
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.more_time_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 10),
+                Expanded(child: Text('Auction extended by $extMins minutes due to last-minute bid!')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF0288D1),
+            duration: const Duration(seconds: 4),
+          ),
+        );
       } else if (type == 'countdown_tick') {
         if (state == null) return;
         final secs = _parseInt(data['seconds_remaining'], state['timeRemainingSec']);
@@ -913,6 +996,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       }
 
       _loginErrorMessage = null;
+      await ApiService.saveRoomCredentials(widget.roomId, email, password);
       await _connectAllRoomsWithSession(sessionToken);
     } else {
       // Fallback check: if user entered standard login email
@@ -958,6 +1042,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                 final wsToken = wsResult['token'].toString();
                 _sessionToken = wsToken;
                 _loginErrorMessage = null;
+                await ApiService.saveRoomCredentials(widget.roomId, email, password);
                 await _connectAllRoomsWithSession(wsToken);
                 return;
               }
@@ -1137,6 +1222,25 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       return isEnded;
     }).toList();
 
+    final int currentTab = _selectedLotTab ?? (liveLots.isNotEmpty ? 1 : (upcomingLots.isNotEmpty ? 2 : 0));
+
+    List<Map<String, dynamic>> displayedLots;
+    switch (currentTab) {
+      case 1:
+        displayedLots = liveLots;
+        break;
+      case 2:
+        displayedLots = upcomingLots;
+        break;
+      case 3:
+        displayedLots = endedLots;
+        break;
+      case 0:
+      default:
+        displayedLots = validCategories;
+        break;
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F5F9),
       appBar: AppBar(
@@ -1174,6 +1278,39 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             tooltip: 'Refresh Bidding Room',
             onPressed: () => _refreshCategories(),
           ),
+          if (!_isSpectator)
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, size: 20),
+              tooltip: 'Account & Session',
+              onSelected: (val) async {
+                if (val == 'logout') {
+                  await ApiService.clearRoomCredentials(widget.roomId);
+                  if (mounted) {
+                    setState(() {
+                      _isAuthenticated = false;
+                      _sessionToken = null;
+                      _approvedRoomIds = null;
+                      _tempPasswordController.clear();
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Logged out of this bidding room.')),
+                    );
+                  }
+                }
+              },
+              itemBuilder: (ctx) => [
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, size: 18, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Logout / Switch Account', style: TextStyle(color: Colors.red, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
       body: _isLoading
@@ -1229,218 +1366,208 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                         ),
                       ),
                     )
-                  : liveLots.isNotEmpty
-                      ? SingleChildScrollView(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (_isSpectator)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFECFDF5),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: const Color(0xFFA7F3D0)),
-                                  ),
-                                  child: const Row(
-                                    children: [
-                                      Icon(Icons.visibility, color: Color(0xFF059669), size: 16),
-                                      SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Admin Spectator Mode — Watching live group auction. Bidding disabled.',
-                                          style: TextStyle(color: Color(0xFF065F46), fontSize: 12, fontWeight: FontWeight.w600),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                              // ── Single Page 3-Column Card Matrix Grid (ONLY LIVE LOTS) ──────
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  const double spacing = 14.0;
-                                  final double calcWidth = (constraints.maxWidth - (spacing * (crossAxisCount - 1))) / crossAxisCount;
-                                  final double cardWidth = calcWidth > 260.0 ? calcWidth : constraints.maxWidth;
-
-                                  return Wrap(
-                                    spacing: spacing,
-                                    runSpacing: spacing,
-                                    children: List.generate(liveLots.length, (idx) {
-                                      final cat = liveLots[idx];
-                                      final rId = cat['id']?.toString() ?? '';
-                                      return SizedBox(
-                                        width: cardWidth,
-                                        child: _buildLotCard(rId, idx),
-                                      );
-                                    }),
-                                  );
-                                },
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_isSpectator)
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFECFDF5),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFA7F3D0)),
                               ),
+                              child: const Row(
+                                children: [
+                                  Icon(Icons.visibility, color: Color(0xFF059669), size: 16),
+                                  SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Admin Spectator Mode — Watching live group auction. Bidding disabled.',
+                                      style: TextStyle(color: Color(0xFF065F46), fontSize: 12, fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
 
-                              // Informational footer if additional lots will go live later
-                              if (upcomingLots.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 20),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFEFF6FF),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.schedule_rounded, color: Color(0xFF2563EB), size: 20),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Text(
-                                          '${upcomingLots.length} more ${_isSpectator ? '' : 'approved '}lot(s) in this event are scheduled to go live later.',
-                                          style: const TextStyle(fontSize: 13, color: Color(0xFF1E40AF), fontWeight: FontWeight.w600),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-
-                              // Informational footer if some lots have ended
-                              if (endedLots.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 10),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.check_circle_outline, color: Color(0xFF64748B), size: 18),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: Text(
-                                          '${endedLots.length} lot(s) in this event have concluded.',
-                                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                            ],
+                          // ── Lots Tab Filter Bar ────────────────────────────
+                          _buildLotsFilterTabBar(
+                            currentTab: currentTab,
+                            allCount: validCategories.length,
+                            liveCount: liveLots.length,
+                            upcomingCount: upcomingLots.length,
+                            endedCount: endedLots.length,
                           ),
-                        )
-                      : upcomingLots.isNotEmpty
-                          ? _buildUpcomingWaitingView(upcomingLots)
-                          : _buildConcludedView(endedLots),
+                          const SizedBox(height: 14),
+
+                          // ── Lots Grid or Empty View ────────────────────────
+                          if (displayedLots.isEmpty)
+                            _buildEmptyLotsView(
+                              tabIndex: currentTab,
+                              allCount: validCategories.length,
+                              liveCount: liveLots.length,
+                              upcomingCount: upcomingLots.length,
+                              endedCount: endedLots.length,
+                            )
+                          else
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final double width = constraints.maxWidth;
+                                int crossAxisCount = width >= 1100 ? 3 : (width >= 650 ? 2 : 1);
+                                const double spacing = 14.0;
+                                final double calcWidth = (width - (spacing * (crossAxisCount - 1))) / crossAxisCount;
+                                final double cardWidth = calcWidth > 260.0 ? calcWidth : width;
+
+                                return Wrap(
+                                  spacing: spacing,
+                                  runSpacing: spacing,
+                                  children: List.generate(displayedLots.length, (idx) {
+                                    final cat = displayedLots[idx];
+                                    final rId = cat['id']?.toString() ?? '';
+                                    final originalIdx = validCategories.indexWhere((c) => c['id']?.toString() == rId);
+                                    return SizedBox(
+                                      width: cardWidth,
+                                      child: _buildLotCard(rId, originalIdx != -1 ? originalIdx : idx),
+                                    );
+                                  }),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
+                    ),
     );
   }
 
-  Widget _buildUpcomingWaitingView(List<Map<String, dynamic>> upcomingLots) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 580),
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
+  Widget _buildLotsFilterTabBar({
+    required int currentTab,
+    required int allCount,
+    required int liveCount,
+    required int upcomingCount,
+    required int endedCount,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool isNarrow = constraints.maxWidth < 480;
+          return Row(
+            children: [
+              _buildFilterTabItem(
+                index: 0,
+                label: isNarrow ? 'All' : 'All Lots',
+                count: allCount,
+                isSelected: currentTab == 0,
+              ),
+              _buildFilterTabItem(
+                index: 1,
+                label: isNarrow ? 'Live' : 'Live Lots',
+                count: liveCount,
+                isSelected: currentTab == 1,
+                hasPulse: liveCount > 0,
+                pulseColor: const Color(0xFF10B981),
+              ),
+              _buildFilterTabItem(
+                index: 2,
+                label: isNarrow ? 'Upcoming' : 'Upcoming',
+                count: upcomingCount,
+                isSelected: currentTab == 2,
+              ),
+              _buildFilterTabItem(
+                index: 3,
+                label: isNarrow ? 'Ended' : 'Ended',
+                count: endedCount,
+                isSelected: currentTab == 3,
               ),
             ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilterTabItem({
+    required int index,
+    required String label,
+    required int count,
+    required bool isSelected,
+    bool hasPulse = false,
+    Color? pulseColor,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedLotTab = index;
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF0F172A) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Column(
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFEFF6FF),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.schedule_rounded, color: Color(0xFF0288D1), size: 30),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'No Lots Currently Live',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'There are ${upcomingLots.length} upcoming lot(s) in this auction event. Bidding will open once a lot begins.',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 13, color: Color(0xFF64748B), height: 1.4),
-              ),
-              const SizedBox(height: 20),
-              ...upcomingLots.map((uCat) {
-                final uItem = (uCat['item'] is Map) ? (uCat['item'] as Map) : {};
-                final uTitle = uCat['title']?.toString() ?? uItem['name']?.toString() ?? 'Lot';
-                final uStart = uCat['scheduled_start']?.toString() ?? '';
-                final double uMinBid = _parseDouble(uItem['min_bid'] ?? uCat['min_bid'], 0.0);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              if (hasPulse) ...[
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.only(right: 5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    color: pulseColor ?? const Color(0xFF10B981),
+                    shape: BoxShape.circle,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.inventory_2_outlined, size: 20, color: Color(0xFF0288D1)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              uTitle,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (uMinBid > 0)
-                              Text(
-                                'Starting Price: ₹${_formatCurrency(uMinBid)}',
-                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFEF3C7),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFFDE68A)),
-                        ),
-                        child: Text(
-                          uStart.isNotEmpty ? 'Starts ${DateTimeUtils.formatIST(uStart, pattern: 'hh:mm a')}' : 'Upcoming',
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF92400E)),
-                        ),
-                      ),
-                    ],
+                ),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? Colors.white : const Color(0xFF475569),
                   ),
-                );
-              }),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _refreshCategories,
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Check for Live Lots'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF0288D1),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? Colors.white.withOpacity(0.2)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? Colors.white : const Color(0xFF64748B),
+                  ),
                 ),
               ),
             ],
@@ -1450,104 +1577,246 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     );
   }
 
-  Widget _buildConcludedView(List<Map<String, dynamic>> endedLots) {
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 580),
-          padding: const EdgeInsets.all(28),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF1F5F9),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF64748B), size: 30),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Auction Event Concluded',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'All lots for this event have ended.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
-              ),
-              const SizedBox(height: 20),
-              ...endedLots.map((eCat) {
-                final rId = eCat['id']?.toString() ?? '';
-                final state = _roomStates[rId];
-                final eItem = (eCat['item'] is Map) ? (eCat['item'] as Map) : {};
-                final eTitle = eCat['title']?.toString() ?? eItem['name']?.toString() ?? 'Lot';
-                final double finalBid = _parseDouble(state?['winningBid'] ?? state?['currentBid'] ?? eCat['current_bid'], 0.0);
-                final String? winner = state?['winnerAlias'] ?? eCat['latest_bidder_alias'];
+  Widget _buildEmptyLotsView({
+    required int tabIndex,
+    required int allCount,
+    required int liveCount,
+    required int upcomingCount,
+    required int endedCount,
+  }) {
+    String title;
+    String subtitle;
+    IconData icon;
+    String? switchButtonText;
+    int? targetTab;
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.inventory_2_outlined, size: 16, color: Color(0xFF94A3B8)),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              eTitle,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF334155)),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (winner != null && winner.isNotEmpty)
-                              const SizedBox.shrink(),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        '₹${_formatCurrency(finalBid)}',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 20),
-              ElevatedButton.icon(
-                onPressed: () => Navigator.of(context).pop(),
-                icon: const Icon(Icons.arrow_back, size: 16),
-                label: const Text('Exit Bidding Room'),
+    if (tabIndex == 1) {
+      title = 'No Live Lots Right Now';
+      subtitle = upcomingCount > 0
+          ? 'There are $upcomingCount upcoming lot(s) waiting to go live in this auction event.'
+          : 'All lots in this auction event have concluded.';
+      icon = Icons.schedule_rounded;
+      if (upcomingCount > 0) {
+        switchButtonText = 'View Upcoming Lots ($upcomingCount)';
+        targetTab = 2;
+      } else if (allCount > 0) {
+        switchButtonText = 'View All Lots ($allCount)';
+        targetTab = 0;
+      }
+    } else if (tabIndex == 2) {
+      title = 'No Upcoming Lots';
+      subtitle = liveCount > 0
+          ? 'There are $liveCount lot(s) currently live and accepting bids.'
+          : 'There are no more upcoming lots scheduled for this auction event.';
+      icon = Icons.event_available_rounded;
+      if (liveCount > 0) {
+        switchButtonText = 'View Live Lots ($liveCount)';
+        targetTab = 1;
+      }
+    } else if (tabIndex == 3) {
+      title = 'No Concluded Lots Yet';
+      subtitle = 'None of the lots in this auction event have concluded yet.';
+      icon = Icons.check_circle_outline_rounded;
+      if (liveCount > 0) {
+        switchButtonText = 'View Live Lots ($liveCount)';
+        targetTab = 1;
+      } else {
+        switchButtonText = 'View All Lots ($allCount)';
+        targetTab = 0;
+      }
+    } else {
+      title = 'No Lots Found';
+      subtitle = 'No lots are available for display in this auction event.';
+      icon = Icons.inventory_2_outlined;
+    }
+
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 480),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
+        margin: const EdgeInsets.symmetric(vertical: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF1F5F9),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 36, color: const Color(0xFF0288D1)),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B), height: 1.4),
+            ),
+            if (switchButtonText != null && targetTab != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {
+                    _selectedLotTab = targetTab;
+                  });
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF0F172A),
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                 ),
+                child: Text(switchButtonText, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showLotDetailsDialog(Map item, Map<String, dynamic> state, String displayTitle) {
+    final String description = item['description']?.toString() ?? 'No additional description provided.';
+    final String location = item['location']?.toString() ?? state['location']?.toString() ?? '';
+    final dynamic rawQty = item['quantity'];
+    final String unit = item['unit']?.toString() ?? '';
+    final double minBid = _parseDouble(state['minBid'], 0.0);
+    final double minRaise = _parseDouble(state['minRaise'], 100.0);
+    final String catName = (state['category'] ?? state['subcategory'] ?? 'General').toString();
+    final images = item['images'];
+    final List<String> imgList = (images is List)
+        ? images.map((e) => e?.toString() ?? '').where((s) => s.isNotEmpty).toList()
+        : [];
+    if (imgList.isEmpty && item['thumbnail_url'] != null) {
+      imgList.add(item['thumbnail_url'].toString());
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 18, 16, 12),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayTitle,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Category: $catName',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, size: 20),
+              onPressed: () => Navigator.of(ctx).pop(),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (imgList.isNotEmpty) ...[
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: SizedBox(
+                      height: 180,
+                      width: double.infinity,
+                      child: Image.network(
+                        imgList.first,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: const Icon(Icons.image_not_supported_outlined, size: 40, color: Colors.grey),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Column(
+                        children: [
+                          const Text('Quantity', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text(formatQuantityWithWords(rawQty ?? '1', unit), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                      Column(
+                        children: [
+                          const Text('Starting Price', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text('₹${_formatCurrency(minBid)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFF0288D1))),
+                        ],
+                      ),
+                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                      Column(
+                        children: [
+                          const Text('Min Raise', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text('+₹${_formatCurrency(minRaise)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                if (location.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.location_on_outlined, size: 15, color: Color(0xFF64748B)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Location: $location',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 14),
+                const Text('Description', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                const SizedBox(height: 6),
+                Text(
+                  description,
+                  style: const TextStyle(fontSize: 12.5, color: Color(0xFF334155), height: 1.4),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1592,10 +1861,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final int timeRem = _remainingSeconds(state);
     final bool isHighest = state['isHighestBidder'] == true;
     final bool isFirst = state['isFirstBid'] == true;
-    final bool ended = state['auctionEnded'] == true;
-    final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
+    final String status = state['status']?.toString() ?? 'upcoming';
+    final bool ended = state['auctionEnded'] == true || status == 'ended';
+    final bool isLive = status == 'live' && !ended;
+    final bool isUpcoming = status == 'upcoming' && !ended;
+    final double? winningBid = state['winningBid'] != null ? _parseDouble(state['winningBid'], 0.0) : null;
+    final String? winnerAlias = state['winnerAlias']?.toString();
+    final String? scheduledStartStr = state['scheduledStart']?.toString();
 
-    final bool isUrgent = timeRem > 0 && timeRem < 120 && !ended;
+    final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
+    final bool isUrgent = timeRem > 0 && timeRem < 120 && isLive;
 
     return Container(
       decoration: BoxDecoration(
@@ -1604,7 +1879,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         border: Border.all(
           color: isHighest
               ? const Color(0xFF10B981)
-              : (ended ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
+              : (ended ? const Color(0xFFE2E8F0) : (isLive ? const Color(0xFFCBD5E1) : const Color(0xFFBFDBFE))),
           width: isHighest ? 2.0 : 1.0,
         ),
         boxShadow: [
@@ -1620,7 +1895,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Card Header: Lot Number, Category & Prominent Timer Pill ─
+          // ── Card Header: Lot Number, Category, Details Button & Status Badge ─
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: const BoxDecoration(
@@ -1657,19 +1932,41 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                         style: const TextStyle(color: Color(0xFF0369A1), fontSize: 9.5, fontWeight: FontWeight.bold),
                       ),
                     ),
+                    InkWell(
+                      onTap: () => _showLotDetailsDialog(item, state, displayTitle),
+                      borderRadius: BorderRadius.circular(5),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.info_outline, size: 11, color: Color(0xFF475569)),
+                            SizedBox(width: 3),
+                            Text('Details', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                 ),
 
-                // Prominent high-contrast countdown timer badge
+                // Prominent high-contrast status badge
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: ended
                         ? const Color(0xFF334155)
-                        : (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)),
+                        : (isLive
+                            ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857))
+                            : const Color(0xFF0288D1)),
                     borderRadius: BorderRadius.circular(20),
                     boxShadow: [
-                      if (!ended)
+                      if (isLive)
                         BoxShadow(
                           color: (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)).withOpacity(0.35),
                           blurRadius: 6,
@@ -1690,10 +1987,14 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        ended ? 'ENDED' : _formatTimerDisplay(timeRem),
+                        ended
+                            ? 'ENDED'
+                            : (isLive
+                                ? _formatTimerDisplay(timeRem)
+                                : 'UPCOMING'),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.4,
                         ),
@@ -1706,55 +2007,58 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           ),
 
           // ── Thumbnail & Title ──────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    width: 58,
-                    height: 58,
-                    color: const Color(0xFFF1F5F9),
-                    child: thumbUrl != null
-                        ? Image.network(
-                            thumbUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined, size: 28, color: Colors.grey),
-                          )
-                        : const Icon(Icons.image_outlined, size: 28, color: Colors.grey),
+          InkWell(
+            onTap: () => _showLotDetailsDialog(item, state, displayTitle),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      width: 58,
+                      height: 58,
+                      color: const Color(0xFFF1F5F9),
+                      child: thumbUrl != null
+                          ? Image.network(
+                              thumbUrl,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(Icons.image_outlined, size: 28, color: Colors.grey),
+                            )
+                          : const Icon(Icons.image_outlined, size: 28, color: Colors.grey),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        displayTitle,
-                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.2),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (itemName.isNotEmpty && itemName != displayTitle) ...[
-                        const SizedBox(height: 2),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          'Item: $itemName',
-                          style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                          displayTitle,
+                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.2),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        if (itemName.isNotEmpty && itemName != displayTitle) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            'Item: $itemName',
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                        const SizedBox(height: 3),
+                        Text(
+                          'Qty: ${formatQuantityWithWords(rawQty ?? '1', unit)}',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                        ),
                       ],
-                      const SizedBox(height: 3),
-                      Text(
-                        'Qty: ${formatQuantityWithWords(rawQty ?? '1', unit)}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
@@ -1770,9 +2074,11 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'CURRENT HIGHEST BID',
-                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
+                Text(
+                  ended
+                      ? 'FINAL WINNING BID'
+                      : (isLive ? 'CURRENT HIGHEST BID' : 'STARTING PRICE'),
+                  style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
                 ),
                 const SizedBox(height: 2),
                 Row(
@@ -1781,14 +2087,20 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      '₹${_formatCurrency(currentBid)}',
-                      style: const TextStyle(
+                      ended
+                          ? (winningBid != null && winningBid > 0
+                              ? '₹${_formatCurrency(winningBid)}'
+                              : (currentBid > 0 ? '₹${_formatCurrency(currentBid)}' : 'Unsold'))
+                          : (isLive
+                              ? '₹${_formatCurrency(currentBid)}'
+                              : '₹${_formatCurrency(minBid)}'),
+                      style: TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
-                        color: Color(0xFF0288D1),
+                        color: ended ? const Color(0xFF334155) : const Color(0xFF0288D1),
                       ),
                     ),
-                    if (isHighest)
+                    if (isHighest && isLive)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
@@ -1807,12 +2119,22 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Base: ₹${_formatCurrency(minBid)}',
+                      isLive
+                          ? 'Base: ₹${_formatCurrency(minBid)}'
+                          : (ended
+                              ? (winnerAlias != null && winnerAlias.isNotEmpty ? 'Winner: $winnerAlias' : 'Concluded Lot')
+                              : 'Base Price: ₹${_formatCurrency(minBid)}'),
                       style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                     ),
                     Text(
-                      'Min Raise: +₹${_formatCurrency(minRaise)}',
-                      style: const TextStyle(fontSize: 10.5, color: Color(0xFFD97706), fontWeight: FontWeight.bold),
+                      isLive
+                          ? 'Min Raise: +₹${_formatCurrency(minRaise)}'
+                          : (isUpcoming ? 'Min Raise: +₹${_formatCurrency(minRaise)}' : 'Closed'),
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isLive ? const Color(0xFFD97706) : const Color(0xFF64748B),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -1820,8 +2142,8 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             ),
           ),
 
-          // ── Leading / 1st Bid Cap Status Pill ──────────────────────
-          if (isHighest)
+          // ── Status Banner ──────────────────────────────────────────
+          if (isLive && isHighest)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1843,7 +2165,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                 ],
               ),
             )
-          else if (isFirst && minBid > 0)
+          else if (isLive && isFirst && minBid > 0)
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1864,10 +2186,36 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   ),
                 ],
               ),
+            )
+          else if (isUpcoming)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule_rounded, color: Color(0xFF2563EB), size: 15),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      scheduledStartStr != null && scheduledStartStr.isNotEmpty
+                          ? 'Starts: ${DateTimeUtils.formatIST(DateTime.tryParse(scheduledStartStr) ?? DateTime.now())}'
+                          : 'Waiting Room • Starts Soon',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF1D4ED8), fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
 
-          // ── Quick Increment Buttons (Layout Stable: Disabled when leading, never collapsed) ──
-          if (!_isSpectator)
+          // ── Quick Increment Buttons (Only for Live Lots) ───────────
+          if (isLive && !_isSpectator)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
               child: Row(
@@ -1876,28 +2224,28 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                     roomId,
                     currentBid + minRaise,
                     '+₹${_formatCurrency(minRaise)}',
-                    enabled: !ended && !isHighest,
+                    enabled: !isHighest,
                   ),
                   const SizedBox(width: 6),
                   _buildQuickIncrementBtn(
                     roomId,
                     currentBid + (minRaise * 5),
                     '+₹${_formatCurrency(minRaise * 5)}',
-                    enabled: !ended && !isHighest,
+                    enabled: !isHighest,
                   ),
                   const SizedBox(width: 6),
                   _buildQuickIncrementBtn(
                     roomId,
                     currentBid + (minRaise * 10),
                     '+₹${_formatCurrency(minRaise * 10)}',
-                    enabled: !ended && !isHighest,
+                    enabled: !isHighest,
                   ),
                 ],
               ),
             ),
 
-          // ── Direct Bidding Input & Action Button ────────────────────
-          if (!ended && !_isSpectator)
+          // ── Action Area (Live: Bidding Input, Upcoming: Waiting Room, Ended: Concluded) ──
+          if (isLive && !_isSpectator)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 5, 14, 14),
               child: Row(
@@ -1918,21 +2266,44 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   ),
                   const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: (isHighest || ended) ? null : () => _placeBidForRoom(roomId),
+                    onPressed: isHighest ? null : () => _placeBidForRoom(roomId),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: ended ? const Color(0xFFE2E8F0) : const Color(0xFF0288D1),
+                      backgroundColor: const Color(0xFF0288D1),
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
                     ),
                     child: Text(
-                      ended ? 'Ended' : (isHighest ? 'Leading' : 'Bid Now'),
+                      isHighest ? 'Leading' : 'Bid Now',
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.bold,
-                        color: (ended || isHighest) ? const Color(0xFF64748B) : Colors.white,
+                        color: isHighest ? const Color(0xFF64748B) : Colors.white,
                       ),
                     ),
+                  ),
+                ],
+              ),
+            )
+          else if (isUpcoming)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.hourglass_top_rounded, size: 15, color: Color(0xFF0288D1)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Waiting Room • Starts Soon',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0288D1)),
                   ),
                 ],
               ),
@@ -1940,7 +2311,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           else if (ended)
             Container(
               width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(14, 6, 14, 14),
+              margin: const EdgeInsets.fromLTRB(14, 8, 14, 14),
               padding: const EdgeInsets.symmetric(vertical: 10),
               alignment: Alignment.center,
               decoration: BoxDecoration(
@@ -1948,9 +2319,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                 borderRadius: BorderRadius.circular(10),
                 border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: const Text(
-                'Auction Lot Concluded',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.check_circle_outline_rounded, size: 15, color: Color(0xFF64748B)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Auction Lot Concluded',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                  ),
+                ],
               ),
             ),
         ],

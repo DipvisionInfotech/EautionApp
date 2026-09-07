@@ -98,6 +98,46 @@ class ApiService {
     await prefs.remove('refresh_token');
   }
 
+  /// Saves room-specific and latest bidding credentials in local storage
+  /// so bidders remain automatically logged in when returning or refreshing.
+  static Future<void> saveRoomCredentials(String roomId, String email, String password) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('room_auth_email_$roomId', email);
+      await prefs.setString('room_auth_pass_$roomId', password);
+      await prefs.setString('last_room_email', email);
+      await prefs.setString('last_room_pass', password);
+    } catch (_) {}
+  }
+
+  /// Retrieves saved room credentials for a specific room (or falls back to last room credentials).
+  static Future<Map<String, String>?> getSavedRoomCredentials(String roomId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String? email = prefs.getString('room_auth_email_$roomId');
+      String? pass = prefs.getString('room_auth_pass_$roomId');
+      if (email == null || pass == null || email.isEmpty || pass.isEmpty) {
+        email = prefs.getString('last_room_email');
+        pass = prefs.getString('last_room_pass');
+      }
+      if (email != null && pass != null && email.isNotEmpty && pass.isNotEmpty) {
+        return {'email': email, 'password': pass};
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Clears saved room credentials when a bidder explicitly logs out or switches account.
+  static Future<void> clearRoomCredentials(String roomId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('room_auth_email_$roomId');
+      await prefs.remove('room_auth_pass_$roomId');
+      await prefs.remove('last_room_email');
+      await prefs.remove('last_room_pass');
+    } catch (_) {}
+  }
+
   static Future<Map<String, dynamic>> register(
       String email, String password, String fullName, String role,
       {String? phone, String? address, List<String>? preferredCategories}) async {

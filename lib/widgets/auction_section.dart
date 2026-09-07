@@ -841,7 +841,25 @@ class _AuctionCardState extends State<AuctionCard> {
                                   () => AuctionDetailDialog.show(context, widget.roomId),
                                   isExtraSmall,
                                 ),
-                                if (_statusText != 'Auction Ended')
+                                if (_statusText != 'Auction Ended') ...[
+                                  if (_statusText != 'LIVE NOW')
+                                    _actionButton(
+                                      context,
+                                      'Enter Room',
+                                      const Color(0xFF0288D1),
+                                      () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => LiveAuctionPage(
+                                              roomId: widget.roomId,
+                                              roomTitle: widget.title,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      isExtraSmall,
+                                    ),
                                   _actionButton(
                                     context,
                                     _statusText == 'LIVE NOW' ? 'Bid Now' : 'Show Interest',
@@ -2246,18 +2264,31 @@ class _GroupAuctionDetailDialogState extends State<GroupAuctionDetailDialog> {
                                     Expanded(
                                       child: ElevatedButton.icon(
                                         onPressed: () {
-                                          EnquiryDialog.show(
-                                            context,
-                                            '$lotTitle (${widget.groupTitle})',
-                                            auctionId: lotRoomId,
-                                            isEmdRequired: lotFeeRequired,
-                                            emdAmount: lotFeeAmount,
-                                          );
+                                          if (lotIsApproved || lotIsTester) {
+                                            Navigator.pop(context);
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (context) => LiveAuctionPage(
+                                                  roomId: lotRoomId,
+                                                  roomTitle: '$lotTitle (${widget.groupTitle})',
+                                                ),
+                                              ),
+                                            );
+                                          } else {
+                                            EnquiryDialog.show(
+                                              context,
+                                              '$lotTitle (${widget.groupTitle})',
+                                              auctionId: lotRoomId,
+                                              isEmdRequired: lotFeeRequired,
+                                              emdAmount: lotFeeAmount,
+                                            );
+                                          }
                                         },
-                                        icon: const Icon(Icons.touch_app_rounded, size: 14),
-                                        label: const Text('Show Interest', overflow: TextOverflow.ellipsis),
+                                        icon: Icon((lotIsApproved || lotIsTester) ? Icons.meeting_room_outlined : Icons.touch_app_rounded, size: 14),
+                                        label: Text((lotIsApproved || lotIsTester) ? 'Enter Room' : 'Show Interest', overflow: TextOverflow.ellipsis),
                                         style: ElevatedButton.styleFrom(
-                                          backgroundColor: const Color(0xFF059669),
+                                          backgroundColor: (lotIsApproved || lotIsTester) ? const Color(0xFF0288D1) : const Color(0xFF059669),
                                           foregroundColor: Colors.white,
                                           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                                           textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
