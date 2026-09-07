@@ -60,8 +60,12 @@ class _PastAuctionsPageState extends State<PastAuctionsPage> {
     return Scaffold(
       backgroundColor: Colors.white,
       drawer: isMobile ? const CustomDrawer(activePage: 'Past Auctions') : null,
-      body: SingleChildScrollView(
-        child: Column(
+      body: RefreshIndicator(
+        onRefresh: _loadData,
+        color: const Color(0xFF0288D1),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Column(
           children: [
             Header(
               activePage: 'Past Auctions',
@@ -114,6 +118,7 @@ class _PastAuctionsPageState extends State<PastAuctionsPage> {
             ),
           ],
         ),
+      ),
       ),
     );
   }
