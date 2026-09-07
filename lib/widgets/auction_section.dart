@@ -887,6 +887,7 @@ class _AuctionCardState extends State<AuctionCard> {
                                     },
                                     isExtraSmall,
                                   ),
+                                ],
                               ],
                             ),
                           ),
