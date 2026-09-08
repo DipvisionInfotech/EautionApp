@@ -1753,6 +1753,11 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       imgList.add(item['thumbnail_url'].toString());
     }
 
+    final String status = state['status']?.toString() ?? 'upcoming';
+    final bool dialogEnded = state['auctionEnded'] == true || status == 'ended';
+    final bool dialogLive = status == 'live' && !dialogEnded;
+    final int dialogTimeRem = _remainingSeconds(state);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -1842,6 +1847,21 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                           Text('+₹${_formatCurrency(minRaise)}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
                         ],
                       ),
+                      Container(width: 1, height: 28, color: const Color(0xFFE2E8F0)),
+                      Column(
+                        children: [
+                          const Text('Time Left', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                          const SizedBox(height: 2),
+                          Text(
+                            dialogEnded ? 'ENDED' : (dialogLive ? _formatTimerDisplay(dialogTimeRem) : 'UPCOMING'),
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                              color: dialogEnded ? const Color(0xFF64748B) : (dialogLive ? const Color(0xFFDC2626) : const Color(0xFF0288D1)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -1925,7 +1945,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final String? scheduledStartStr = state['scheduledStart']?.toString();
 
     final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
-    final bool isUrgent = timeRem > 0 && timeRem < 120 && isLive;
+    final bool isUrgent = timeRem > 0 && timeRem <= 180 && isLive;
 
     return Container(
       decoration: BoxDecoration(
@@ -1961,101 +1981,105 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Wrap(
-                  spacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0F172A),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        'LOT ${index + 1}',
-                        style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE0F2FE),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
-                        catName,
-                        style: const TextStyle(color: Color(0xFF0369A1), fontSize: 9.5, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    InkWell(
-                      onTap: () => _showLotDetailsDialog(item, state, displayTitle),
-                      borderRadius: BorderRadius.circular(5),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: const Color(0xFF0F172A),
                           borderRadius: BorderRadius.circular(5),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
                         ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.info_outline, size: 11, color: Color(0xFF475569)),
-                            SizedBox(width: 3),
-                            Text('Details', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
-                          ],
+                        child: Text(
+                          'LOT ${index + 1}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                         ),
                       ),
-                    ),
-                    if (extCount > 0 && isLive) ...[
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                         decoration: BoxDecoration(
-                          color: isFinalRound ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+                          color: const Color(0xFFE0F2FE),
                           borderRadius: BorderRadius.circular(5),
-                          border: Border.all(
-                            color: isFinalRound ? const Color(0xFFFCA5A5) : const Color(0xFFFCD34D),
-                          ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.access_time_filled,
-                              size: 10,
-                              color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFD97706),
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              isFinalRound ? 'FINAL ROUND' : 'OT $extCount/$maxExt',
-                              style: TextStyle(
-                                color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFB45309),
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          catName,
+                          style: const TextStyle(color: Color(0xFF0369A1), fontSize: 9.5, fontWeight: FontWeight.bold),
                         ),
                       ),
+                      InkWell(
+                        onTap: () => _showLotDetailsDialog(item, state, displayTitle),
+                        borderRadius: BorderRadius.circular(5),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.info_outline, size: 11, color: Color(0xFF475569)),
+                              SizedBox(width: 3),
+                              Text('Details', style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (extCount > 0 && isLive) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isFinalRound ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(
+                              color: isFinalRound ? const Color(0xFFFCA5A5) : const Color(0xFFFCD34D),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.access_time_filled,
+                                size: 10,
+                                color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFD97706),
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                isFinalRound ? 'FINAL ROUND' : 'OT $extCount/$maxExt',
+                                style: TextStyle(
+                                  color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFB45309),
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
+                const SizedBox(width: 8),
 
-                // Prominent high-contrast status badge
+                // Prominent high-contrast countdown timer / status badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                   decoration: BoxDecoration(
                     color: ended
                         ? const Color(0xFF334155)
                         : (isLive
                             ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857))
                             : const Color(0xFF0288D1)),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(22),
                     boxShadow: [
                       if (isLive)
                         BoxShadow(
-                          color: (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)).withOpacity(0.35),
-                          blurRadius: 6,
+                          color: (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)).withOpacity(0.4),
+                          blurRadius: 8,
                           offset: const Offset(0, 2),
                         ),
                     ],
@@ -2063,13 +2087,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: ended ? Colors.white54 : Colors.white,
-                        ),
+                      Icon(
+                        ended
+                            ? Icons.lock_clock_outlined
+                            : (isLive ? Icons.timer_outlined : Icons.schedule_rounded),
+                        size: 17,
+                        color: Colors.white,
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -2080,9 +2103,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                                 : 'UPCOMING'),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 12.5,
+                          fontSize: 16.5,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 0.4,
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ],
