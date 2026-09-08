@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
@@ -721,8 +722,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
 
         if (data['extended'] == true || data['is_extended'] == true) {
           final int extRound = _parseInt(data['extension_count'], state['extensionCount'] ?? 1);
-          final int maxExt = _parseInt(data['max_extensions'], state['maxExtensions'] ?? 10);
-          final bool isFinalRound = data['is_final_round'] == true || extRound >= maxExt;
           final String lotName = state['title']?.toString() ?? 'Lot';
 
           ScaffoldMessenger.of(context).clearSnackBars();
@@ -730,24 +729,22 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             SnackBar(
               content: Row(
                 children: [
-                  Icon(
-                    isFinalRound ? Icons.warning_amber_rounded : Icons.more_time_rounded,
+                  const Icon(
+                    Icons.more_time_rounded,
                     color: Colors.white,
                     size: 20,
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      isFinalRound
-                          ? 'FINAL ROUND: $lotName extended by 3 minutes (Round $extRound of $maxExt). Auction ends after this round!'
-                          : '$lotName extended by 3 minutes (Overtime $extRound of $maxExt)!',
+                      'Bid placed in final minute! $lotName extended by 3 minutes (Overtime Round $extRound)!',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
               ),
-              backgroundColor: isFinalRound ? const Color(0xFFD97706) : const Color(0xFF0288D1),
-              duration: const Duration(seconds: 5),
+              backgroundColor: const Color(0xFF0288D1),
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -767,8 +764,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           state['status'] = 'live';
         }
         final int extRound = _parseInt(data['extension_count'], state?['extensionCount'] ?? 1);
-        final int maxExt = _parseInt(data['max_extensions'], state?['maxExtensions'] ?? 10);
-        final bool isFinalRound = data['is_final_round'] == true || extRound >= maxExt;
         final String lotName = state?['title']?.toString() ?? 'Lot';
 
         ScaffoldMessenger.of(context).clearSnackBars();
@@ -776,24 +771,22 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           SnackBar(
             content: Row(
               children: [
-                Icon(
-                  isFinalRound ? Icons.warning_amber_rounded : Icons.more_time_rounded,
+                const Icon(
+                  Icons.more_time_rounded,
                   color: Colors.white,
                   size: 20,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    isFinalRound
-                        ? 'FINAL ROUND: $lotName extended by 3 minutes (Round $extRound of $maxExt). Auction ends after this round!'
-                        : '$lotName extended by 3 minutes (Overtime $extRound of $maxExt)!',
+                    'Bid placed in final minute! $lotName extended by 3 minutes (Overtime Round $extRound)!',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
             ),
-            backgroundColor: isFinalRound ? const Color(0xFFD97706) : const Color(0xFF0288D1),
-            duration: const Duration(seconds: 5),
+            backgroundColor: const Color(0xFF0288D1),
+            duration: const Duration(seconds: 4),
           ),
         );
       } else if (type == 'countdown_tick') {
@@ -1938,14 +1931,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final bool isLive = status == 'live' && !ended;
     final bool isUpcoming = status == 'upcoming' && !ended;
     final int extCount = _parseInt(state['extensionCount'], 0);
-    final int maxExt = _parseInt(state['maxExtensions'], 10);
-    final bool isFinalRound = extCount >= maxExt;
     final double? winningBid = state['winningBid'] != null ? _parseDouble(state['winningBid'], 0.0) : null;
     final String? winnerAlias = state['winnerAlias']?.toString();
     final String? scheduledStartStr = state['scheduledStart']?.toString();
 
     final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
-    final bool isUrgent = timeRem > 0 && timeRem <= 180 && isLive;
+    final bool isUrgent = timeRem > 0 && timeRem <= 60 && isLive;
 
     return Container(
       decoration: BoxDecoration(
@@ -2013,7 +2004,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                         onTap: () => _showLotDetailsDialog(item, state, displayTitle),
                         borderRadius: BorderRadius.circular(5),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2.5),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(5),
@@ -2029,81 +2020,54 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                           ),
                         ),
                       ),
-                      if (extCount > 0 && isLive) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: isFinalRound ? const Color(0xFFFEF2F2) : const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(5),
-                            border: Border.all(
-                              color: isFinalRound ? const Color(0xFFFCA5A5) : const Color(0xFFFCD34D),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.access_time_filled,
-                                size: 10,
-                                color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFD97706),
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                isFinalRound ? 'FINAL ROUND' : 'OT $extCount/$maxExt',
-                                style: TextStyle(
-                                  color: isFinalRound ? const Color(0xFFDC2626) : const Color(0xFFB45309),
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
                 const SizedBox(width: 8),
 
-                // Prominent high-contrast countdown timer / status badge
+                // Compact Header Status Pill
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: ended
-                        ? const Color(0xFF334155)
+                        ? const Color(0xFFF1F5F9)
                         : (isLive
-                            ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857))
-                            : const Color(0xFF0288D1)),
-                    borderRadius: BorderRadius.circular(22),
-                    boxShadow: [
-                      if (isLive)
-                        BoxShadow(
-                          color: (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857)).withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                    ],
+                            ? (isUrgent ? const Color(0xFFFEF2F2) : const Color(0xFFECFDF5))
+                            : const Color(0xFFEFF6FF)),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: ended
+                          ? const Color(0xFFCBD5E1)
+                          : (isLive
+                              ? (isUrgent ? const Color(0xFFFCA5A5) : const Color(0xFFA7F3D0))
+                              : const Color(0xFFBFDBFE)),
+                    ),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        ended
-                            ? Icons.lock_clock_outlined
-                            : (isLive ? Icons.timer_outlined : Icons.schedule_rounded),
-                        size: 17,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 6),
+                      if (isLive) ...[
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isUrgent ? const Color(0xFFDC2626) : const Color(0xFF059669),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                      ],
                       Text(
                         ended
                             ? 'ENDED'
-                            : (isLive
-                                ? _formatTimerDisplay(timeRem)
-                                : 'UPCOMING'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16.5,
+                            : (isLive ? (isUrgent ? 'LAST MINUTE' : 'LIVE') : 'UPCOMING'),
+                        style: TextStyle(
+                          color: ended
+                              ? const Color(0xFF475569)
+                              : (isLive
+                                  ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF047857))
+                                  : const Color(0xFF0284C7)),
+                          fontSize: 10.5,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 0.5,
                         ),
@@ -2119,7 +2083,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           InkWell(
             onTap: () => _showLotDetailsDialog(item, state, displayTitle),
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -2145,15 +2109,15 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                       children: [
                         Text(
                           displayTitle,
-                          style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.2),
-                          maxLines: 1,
+                          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Color(0xFF0F172A), height: 1.25),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                         if (itemName.isNotEmpty && itemName != displayTitle) ...[
                           const SizedBox(height: 2),
                           Text(
                             'Item: $itemName',
-                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569), fontWeight: FontWeight.w600),
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF475569), fontWeight: FontWeight.w600),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -2161,13 +2125,151 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                         const SizedBox(height: 3),
                         Text(
                           'Qty: ${formatQuantityWithWords(rawQty ?? '1', unit)}',
-                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF334155), fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
+            ),
+          ),
+
+          // ── Big Centered Hero Countdown Timer ──────────────────────
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: ended
+                  ? const Color(0xFFF8FAFC)
+                  : (isLive
+                      ? (isUrgent ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4))
+                      : const Color(0xFFF0F9FF)),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: ended
+                    ? const Color(0xFFE2E8F0)
+                    : (isLive
+                        ? (isUrgent ? const Color(0xFFEF4444) : const Color(0xFF22C55E))
+                        : const Color(0xFFBAE6FD)),
+                width: isUrgent ? 2.0 : 1.2,
+              ),
+              boxShadow: [
+                if (isLive && isUrgent)
+                  BoxShadow(
+                    color: const Color(0xFFEF4444).withOpacity(0.18),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  )
+                else if (isLive)
+                  BoxShadow(
+                    color: const Color(0xFF22C55E).withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      ended
+                          ? Icons.lock_clock_outlined
+                          : (isLive
+                              ? (isUrgent ? Icons.warning_amber_rounded : Icons.timer_outlined)
+                              : Icons.schedule_rounded),
+                      size: 15,
+                      color: ended
+                          ? const Color(0xFF64748B)
+                          : (isLive
+                              ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF16A34A))
+                              : const Color(0xFF0284C7)),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      ended
+                          ? 'AUCTION CONCLUDED'
+                          : (isLive
+                              ? (isUrgent ? 'URGENT: LAST MINUTE TO BID!' : 'TIME REMAINING')
+                              : 'AUCTION STARTS IN'),
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: ended
+                            ? const Color(0xFF64748B)
+                            : (isLive
+                                ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF16A34A))
+                                : const Color(0xFF0284C7)),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    ended
+                        ? 'CLOSED'
+                        : (isLive
+                            ? _formatTimerDisplay(timeRem)
+                            : (timeRem > 0 ? _formatTimerDisplay(timeRem) : 'UPCOMING')),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.0,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: ended
+                          ? const Color(0xFF475569)
+                          : (isLive
+                              ? (isUrgent ? const Color(0xFFDC2626) : const Color(0xFF0F172A))
+                              : const Color(0xFF0369A1)),
+                    ),
+                  ),
+                ),
+                if (isLive && extCount > 0) ...[
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF3C7),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFF59E0B)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.more_time_rounded, size: 12, color: Color(0xFFB45309)),
+                        const SizedBox(width: 4),
+                        Text(
+                          'OVERTIME ROUND $extCount (+3 mins added)',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ] else if (isLive && isUrgent) ...[
+                  const SizedBox(height: 3),
+                  const Text(
+                    'Bid placed now grants +3 minutes extension',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFDC2626),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
 
@@ -2187,9 +2289,9 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                   ended
                       ? 'FINAL WINNING BID'
                       : (isLive ? 'CURRENT HIGHEST BID' : 'STARTING PRICE'),
-                  style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF64748B), letterSpacing: 0.5),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
@@ -2211,14 +2313,14 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                     ),
                     if (isHighest && isLive)
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
                           color: const Color(0xFF10B981),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Text(
                           'LEADING',
-                          style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                          style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900),
                         ),
                       ),
                   ],
@@ -2233,14 +2335,14 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                           : (ended
                               ? (winnerAlias != null && winnerAlias.isNotEmpty ? 'Winner: $winnerAlias' : 'Concluded Lot')
                               : 'Base Price: ₹${_formatCurrency(minBid)}'),
-                      style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
                     ),
                     Text(
                       isLive
                           ? 'Min Raise: +₹${_formatCurrency(minRaise)}'
                           : (isUpcoming ? 'Min Raise: +₹${_formatCurrency(minRaise)}' : 'Closed'),
                       style: TextStyle(
-                        fontSize: 10.5,
+                        fontSize: 11,
                         color: isLive ? const Color(0xFFD97706) : const Color(0xFF64748B),
                         fontWeight: FontWeight.bold,
                       ),
