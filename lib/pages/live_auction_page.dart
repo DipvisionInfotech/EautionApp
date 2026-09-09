@@ -748,6 +748,51 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             ),
           );
         }
+      } else if (type == 'bid_deleted') {
+        if (state != null) {
+          final double newAmt = _parseDouble(data['amount'], 0.0);
+          final String? newAlias = data['bidder_alias']?.toString();
+          final int deletedSeq = _parseInt(data['deleted_seq'], 0);
+
+          state['currentBid'] = newAmt;
+          state['isFirstBid'] = (data['is_first_bid'] == true) || (newAmt <= (state['minBid'] ?? 0.0));
+          state['isHighestBidder'] = (data['is_highest_bidder'] == true) ||
+              (state['myAlias'] != null && newAlias != null && newAlias == state['myAlias']);
+
+          // Remove deleted bid from any cached bid lists
+          if (state['bids'] is List) {
+            (state['bids'] as List).removeWhere(
+              (b) => _parseInt(b['seq'] ?? b['sequence_number'], -1) == deletedSeq,
+            );
+          }
+
+          final String lotName = state['title']?.toString() ?? 'Lot';
+          final String msg = data['message']?.toString() ?? 'Bid #$deletedSeq was retracted by administrator.';
+
+          ScaffoldMessenger.of(context).clearSnackBars();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(
+                    Icons.remove_circle_outline_rounded,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '$lotName: $msg',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFFD32F2F),
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       } else if (type == 'auction_extended') {
         if (state != null) {
           if (data['seconds_remaining'] != null || data['time_remaining_sec'] != null) {
