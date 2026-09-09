@@ -2367,6 +2367,18 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                           'LEADING',
                           style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900),
                         ),
+                      )
+                    else if (isLive && !isFirst)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'OUTBID',
+                          style: TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w900),
+                        ),
                       ),
                   ],
                 ),
@@ -2398,24 +2410,70 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             ),
           ),
 
-          // ── Status Banner ──────────────────────────────────────────
+          // ── Status Banner (Highest Bidder in Green & Losing Bidders in Red) ──
           if (isLive && isHighest)
             Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
               decoration: BoxDecoration(
-                color: const Color(0xFFECFDF5),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFA7F3D0)),
+                color: const Color(0xFFDCFCE7),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF16A34A), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF16A34A).withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.check_circle, color: Color(0xFF059669), size: 15),
-                  SizedBox(width: 6),
+                  Icon(Icons.check_circle_rounded, color: Color(0xFF15803D), size: 18),
+                  SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'You hold the highest bid on this lot! Awaiting bids.',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF047857), fontWeight: FontWeight.bold),
+                      'You are the highest bidder',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF14532D),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (isLive && !isFirst)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFEF4444), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFEF4444).withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.cancel_rounded, color: Color(0xFFDC2626), size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You are not the highest bidder',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF7F1D1D),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.2,
+                      ),
                     ),
                   ),
                 ],
