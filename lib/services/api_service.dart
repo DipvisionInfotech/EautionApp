@@ -98,28 +98,26 @@ class ApiService {
     await prefs.remove('refresh_token');
   }
 
-  /// Saves room-specific and latest bidding credentials in local storage
-  /// so bidders remain automatically logged in when returning or refreshing.
+  /// Saves room-specific bidding credentials in local storage strictly scoped to this room
+  /// so bidders remain automatically logged in when returning or refreshing this specific room.
   static Future<void> saveRoomCredentials(String roomId, String email, String password) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('room_auth_email_$roomId', email);
       await prefs.setString('room_auth_pass_$roomId', password);
-      await prefs.setString('last_room_email', email);
-      await prefs.setString('last_room_pass', password);
+      // Clean up legacy global keys to prevent any cross-room leakage
+      await prefs.remove('last_room_email');
+      await prefs.remove('last_room_pass');
     } catch (_) {}
   }
 
-  /// Retrieves saved room credentials for a specific room (or falls back to last room credentials).
+  /// Retrieves saved room credentials strictly for this specific room.
+  /// Never falls back to credentials from another room.
   static Future<Map<String, String>?> getSavedRoomCredentials(String roomId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      String? email = prefs.getString('room_auth_email_$roomId');
-      String? pass = prefs.getString('room_auth_pass_$roomId');
-      if (email == null || pass == null || email.isEmpty || pass.isEmpty) {
-        email = prefs.getString('last_room_email');
-        pass = prefs.getString('last_room_pass');
-      }
+      final String? email = prefs.getString('room_auth_email_$roomId');
+      final String? pass = prefs.getString('room_auth_pass_$roomId');
       if (email != null && pass != null && email.isNotEmpty && pass.isNotEmpty) {
         return {'email': email, 'password': pass};
       }

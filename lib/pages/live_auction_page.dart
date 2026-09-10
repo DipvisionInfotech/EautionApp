@@ -356,7 +356,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
       }
     } catch (_) {}
 
-    // Check for saved room credentials to automatically log back into the room without re-prompting
+    // Check for saved room credentials strictly for this room to automatically log back in on refresh
     try {
       final savedCreds = await ApiService.getSavedRoomCredentials(widget.roomId);
       if (savedCreds != null && mounted) {
@@ -365,9 +365,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         _log('Auto-authenticating with saved room credentials for ${savedCreds['email']}');
         await _performEphemeralLogin();
         if (_isAuthenticated) return;
+
+        // If auto-login failed for this room (e.g. revoked/expired), clear inputs so stale creds aren't left
+        _tempEmailController.clear();
+        _tempPasswordController.clear();
+        await ApiService.clearRoomCredentials(widget.roomId);
       }
     } catch (e) {
       _log('Auto-login from saved credentials failed: $e');
+      _tempEmailController.clear();
+      _tempPasswordController.clear();
     }
 
     if (mounted) {
@@ -759,39 +766,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           state['isHighestBidder'] = (data['is_highest_bidder'] == true) ||
               (state['myAlias'] != null && newAlias != null && newAlias == state['myAlias']);
 
-          // Remove deleted bid from any cached bid lists
+          // Remove deleted bid from any cached bid lists silently without toast/alert to bidders
           if (state['bids'] is List) {
             (state['bids'] as List).removeWhere(
               (b) => _parseInt(b['seq'] ?? b['sequence_number'], -1) == deletedSeq,
             );
           }
-
-          final String lotName = state['title']?.toString() ?? 'Lot';
-          final String msg = data['message']?.toString() ?? 'Bid #$deletedSeq was retracted by administrator.';
-
-          ScaffoldMessenger.of(context).clearSnackBars();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(
-                    Icons.remove_circle_outline_rounded,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      '$lotName: $msg',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-              backgroundColor: const Color(0xFFD32F2F),
-              duration: const Duration(seconds: 4),
-            ),
-          );
         }
       } else if (type == 'auction_extended') {
         if (state != null) {
@@ -1380,6 +1360,7 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                       _isAuthenticated = false;
                       _sessionToken = null;
                       _approvedRoomIds = null;
+                      _tempEmailController.clear();
                       _tempPasswordController.clear();
                     });
                     ScaffoldMessenger.of(context).showSnackBar(
