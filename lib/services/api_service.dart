@@ -71,8 +71,17 @@ class ApiService {
           }
           return newAccess;
         }
+      } else if (response.statusCode == 401) {
+        // Token is genuinely invalid or expired — clear saved tokens
+        await clearTokens();
+        return null;
+      } else {
+        // 5xx server error or temporary issue — do NOT clear tokens
+        return null;
       }
-    } catch (_) {}
+    } catch (_) {
+      // Network exception — do NOT clear tokens
+    }
     return null;
   }
 
@@ -86,8 +95,10 @@ class ApiService {
       if (refreshed != null) {
         return refreshed;
       }
-      await clearTokens();
-      return null;
+      // If refresh returned 401, clearTokens() already removed access_token.
+      // If tokens are still in storage (transient 5xx / offline), preserve session.
+      final currentAccess = prefs.getString('access_token');
+      return currentAccess;
     }
     return access;
   }

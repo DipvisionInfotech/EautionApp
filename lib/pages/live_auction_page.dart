@@ -4,7 +4,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../services/api_service.dart';
-import '../utils/date_utils.dart';
 import '../utils/number_to_words.dart';
 
 double _parseDouble(dynamic val, [double fallback = 0.0]) {
@@ -237,8 +236,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
             existing['subcategory'] = cat['subcategory']?.toString() ?? existing['subcategory'];
             existing['item'] = itemMap;
             existing['status'] = status;
-            _syncCountdown(existing, timeRem);
-            existing['auctionEnded'] = isEnded;
+            final int currentRem = _remainingSeconds(existing);
+            final bool hasActiveOvertime = (status == 'live' && currentRem > 0 && currentRem > timeRem);
+            if (!hasActiveOvertime) {
+              _syncCountdown(existing, timeRem);
+            }
+            existing['auctionEnded'] = status == 'ended' || (status == 'live' && timeRem == 0 && !hasActiveOvertime);
             existing['minBid'] = minBid;
             existing['minRaise'] = minRaise;
             if (existing['isFirstBid'] == true) {
@@ -314,11 +317,16 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           }
 
           // Automatically transition upcoming lots into live when scheduled start arrives
+          // Only do this if the scheduled end is also still in the future, so that
+          // admin-reset auctions (with past scheduledEnd) don't instantly flip to ended.
           if (!ended && status == 'upcoming') {
             final startStr = state['scheduledStart']?.toString();
+            final endStr = state['scheduledEnd']?.toString();
             if (startStr != null && startStr.isNotEmpty) {
               final startDt = DateTime.tryParse(startStr);
-              if (startDt != null && (now.isAfter(startDt) || now.isAtSameMomentAs(startDt))) {
+              final endDt = endStr != null ? DateTime.tryParse(endStr) : null;
+              final endIsInFuture = endDt != null && now.isBefore(endDt);
+              if (startDt != null && endIsInFuture && (now.isAfter(startDt) || now.isAtSameMomentAs(startDt))) {
                 _log('Upcoming lot ${state['roomId']} scheduled start reached! Auto-transitioning to live.');
                 state['status'] = 'live';
                 state['auctionEnded'] = false;
@@ -615,8 +623,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
           } else {
             existing['currentBid'] = _parseDouble(cat['current_bid'], existing['currentBid']);
           }
-          _syncCountdown(existing, timeRem);
-          existing['auctionEnded'] = isEnded;
+          final int currentRem = _remainingSeconds(existing);
+          final bool hasActiveOvertime = (status == 'live' && currentRem > 0 && currentRem > timeRem);
+          if (!hasActiveOvertime) {
+            _syncCountdown(existing, timeRem);
+          }
+          existing['auctionEnded'] = status == 'ended' || (status == 'live' && timeRem == 0 && !hasActiveOvertime);
           if (winnerMap != null) {
             existing['winningBid'] = _parseDouble(winnerMap['bid_amount'], 0.0);
             existing['winnerAlias'] = cat['winner']?['user_id']?.toString();
@@ -874,7 +886,12 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         if (data['seconds_remaining'] != null) {
           _syncCountdown(targetState, _parseInt(data['seconds_remaining'], targetState['timeRemainingSec']));
         }
-        final ended = targetState['status'] == 'ended' || _remainingSeconds(targetState) <= 0;
+        // Only treat timer expiry as "ended" when the room is actively live.
+        // For 'upcoming' status, seconds_remaining may be 0 (past scheduled_end)
+        // but the admin manually set it to upcoming — do NOT mark it as ended.
+        final currentStatus = targetState['status']?.toString() ?? 'live';
+        final ended = currentStatus == 'ended' ||
+            (currentStatus == 'live' && _remainingSeconds(targetState) <= 0);
         targetState['auctionEnded'] = ended;
 
         // Also update matching item in _categories so thumbnail / card re-renders title, unit, quantity
@@ -958,6 +975,31 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
         ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(errorMsg), backgroundColor: Colors.red),
+        );
+      } else if (type == 'connection_revoked') {
+        final message = data['message']?.toString() ?? 'Your bidding access for this room has been revoked by the administrator.';
+        _roomChannels[targetRoomId]?.sink.close(4403);
+        _roomChannels.remove(targetRoomId);
+        if (_approvedRoomIds != null) {
+          _approvedRoomIds!.remove(targetRoomId);
+        }
+        if (_roomStates.containsKey(targetRoomId)) {
+          _roomStates[targetRoomId]!['isApproved'] = false;
+        }
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.red),
+        );
+      } else if (type == 'credentials_updated') {
+        final message = data['message']?.toString() ?? 'Your bidding credentials were updated. Please log in again.';
+        _roomChannels[targetRoomId]?.sink.close(4401);
+        _roomChannels.remove(targetRoomId);
+        _sessionToken = null;
+        _isAuthenticated = false;
+        _loginErrorMessage = message;
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.orange),
         );
       }
     });
@@ -1959,7 +2001,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
     final int extCount = _parseInt(state['extensionCount'], 0);
     final double? winningBid = state['winningBid'] != null ? _parseDouble(state['winningBid'], 0.0) : null;
     final String? winnerAlias = state['winnerAlias']?.toString();
-    final String? scheduledStartStr = state['scheduledStart']?.toString();
 
     final controller = state['bidController'] as TextEditingController? ?? TextEditingController();
     final bool isUrgent = timeRem > 0 && timeRem <= 60 && isLive;
@@ -2477,32 +2518,6 @@ class _LiveAuctionPageState extends State<LiveAuctionPage> with WidgetsBindingOb
                     child: Text(
                       '1st Bid Max: ₹${_formatCurrency(minBid * 10)} (10x Base)',
                       style: const TextStyle(fontSize: 10.5, color: Color(0xFF92400E), fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            )
-          else if (isUpcoming)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFBFDBFE)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.schedule_rounded, color: Color(0xFF2563EB), size: 15),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      scheduledStartStr != null && scheduledStartStr.isNotEmpty
-                          ? 'Starts: ${DateTimeUtils.formatIST(DateTime.tryParse(scheduledStartStr) ?? DateTime.now())}'
-                          : 'Waiting Room • Starts Soon',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF1D4ED8), fontWeight: FontWeight.bold),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],

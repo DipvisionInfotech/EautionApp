@@ -20,8 +20,8 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Slick Salvage LLP - Premier E-auction Platform">
   
-  <!-- Prevent caching of index.html so updates are checked immediately -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <!-- Prevent browser, proxy, and CDN caching of index.html -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
 
@@ -38,30 +38,80 @@
   <link rel="manifest" href="manifest.json">
   
   <script>
-    // Unregister any previously installed service workers and clear CacheStorage so old cached builds don't interfere
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for (let registration of registrations) {
-          registration.unregister();
+    (function () {
+      // 1. Immediately wipe any legacy Service Workers & browser CacheStorage
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (registrations) {
+          var hadSw = registrations && registrations.length > 0;
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister();
+          }
+          // If this client had a service worker controlling it, reload once to detach it completely
+          if (hadSw && !sessionStorage.getItem('sw_cleared_reload')) {
+            sessionStorage.setItem('sw_cleared_reload', '1');
+            if ('caches' in window) {
+              caches.keys().then(function (names) {
+                return Promise.all(names.map(function (name) { return caches.delete(name); }));
+              }).finally(function () {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+          }
+        }).catch(function () {});
+      }
+
+      // 2. Automated Version Sentinel: Detects when a new build is uploaded to the server
+      var bootstrapInjected = false;
+      function injectBootstrap() {
+        if (bootstrapInjected) return;
+        bootstrapInjected = true;
+        var s = document.createElement('script');
+        s.src = "flutter_bootstrap.js?v=" + Date.now();
+        s.async = true;
+        document.body.appendChild(s);
+      }
+
+      // Fallback timer: Never hang or show blank screen if version.json is unreachable
+      var fallbackTimer = setTimeout(injectBootstrap, 1200);
+
+      fetch("version.json?t=" + Date.now(), {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache, no-store", "Pragma": "no-cache" }
+      })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        clearTimeout(fallbackTimer);
+        if (data && (data.build_number || data.version)) {
+          var latestBuild = (data.version || "1.0.0") + "." + (data.build_number || "");
+          var activeBuild = localStorage.getItem("slick_app_active_build");
+
+          // When a new build was deployed on Hostinger, automatically refresh to load it
+          if (activeBuild && activeBuild !== latestBuild) {
+            console.log("[AutoUpdate] New build detected: " + latestBuild + " (previous was: " + activeBuild + "). Auto-refreshing...");
+            localStorage.setItem("slick_app_active_build", latestBuild);
+            if ('caches' in window) {
+              caches.keys().then(function (names) {
+                return Promise.all(names.map(function (n) { return caches.delete(n); }));
+              }).finally(function () {
+                window.location.reload();
+              });
+            } else {
+              window.location.reload();
+            }
+            return;
+          }
+          localStorage.setItem("slick_app_active_build", latestBuild);
         }
+        injectBootstrap();
+      })
+      .catch(function () {
+        injectBootstrap();
       });
-    }
-    if ('caches' in window) {
-      caches.keys().then(function(names) {
-        for (let name of names) {
-          caches.delete(name);
-        }
-      });
-    }
+    })();
   </script>
 </head>
 <body>
-  <script>
-    // Load flutter_bootstrap.js with cache-busting timestamp so new builds are detected immediately
-    var bootstrapScript = document.createElement('script');
-    bootstrapScript.src = "flutter_bootstrap.js?v=" + new Date().getTime();
-    bootstrapScript.async = true;
-    document.body.appendChild(bootstrapScript);
-  </script>
 </body>
 </html>

@@ -12,8 +12,10 @@
         }
       });
     }
-    // Load Flutter without deprecated ServiceWorker caching
-    window._flutter.loader.load();
+    // Load Flutter with serviceWorkerSettings: null to strictly prevent ServiceWorker registration
+    window._flutter.loader.load({
+      serviceWorkerSettings: null
+    });
   }
 
   var isLoaded = false;
@@ -25,7 +27,7 @@
   }, 1200);
 
   // Fetch version.json without cache to obtain the unique build timestamp
-  fetch("version.json?t=" + new Date().getTime(), { cache: "no-store" })
+  fetch("version.json?t=" + new Date().getTime(), { cache: "no-store", headers: { "Cache-Control": "no-cache" } })
     .then(function (res) { return res.json(); })
     .then(function (data) {
       if (!isLoaded) {
